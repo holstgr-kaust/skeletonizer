@@ -92,17 +92,10 @@ class Skeleton(object):
         (Segment.pointcount) for this method to pass the points to
         their correct segments.
         """
-
-        c = 0
-        point_count = 0
-        seg_count = self.segments[c].pointcount
-        for point in points:
-            point_count += 1;
-            s = self.segments[c]
-            if point_count > seg_count:
-                c =+ 1
-                seg_count += self.segments[c].pointcount
-            self.segments[c].points.append(point)
+        offset = 0
+        for segment in self.segments :
+            segment.points = points[offset:offset+segment.pointcount]
+            offset += segment.pointcount
 
     def info(self):
         """Print out the count of Node, Segment and Points objects"""
@@ -192,4 +185,3 @@ class AmirameshReader(object):
         # add points in the end for efficiency
         skel.add_points(points)
         return skel
-

@@ -1,7 +1,9 @@
 #!/usr/bin/python
 
 import sys
-sys.path.insert(0, "/home/holst/Development/RTNeuron/Build/BBPSDK/lib")
-#sys.path.insert(0, "/var/remote/projects/epfl/development/staging/RTNeuron.temp.16.03.2014/Build/BBPSDK/lib")
-#sys.path.insert(0,"/var/remote/projects/epfl/development/staging/RTNeuron/Build/BBPSDK/lib")
+sys.path = ['/home/holst/Development/RTNeuron/Build/RTNeuron/lib',
+            '/home/holst/Development/RTNeuron/Build/install/lib',
+            '/home/holst/Development/RTNeuron/Build/BBPSDK/lib',
+            '/home/holst/Development/RTNeuron/Build/install/lib/python2.7/dist-packages'] + sys.path
+
 from bbp import *

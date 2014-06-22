@@ -19,27 +19,20 @@ def create_morphology(skel):
     morphology = Morphology()
     soma = morphology.soma()
 
-    for segm in skel.segments:
+    for segm in skel.segments :
+        if len(segm.points) < 2 :
+            continue
 
-        print("Segment start:" + repr(segm.start) + "end:" + repr(segm.end))
-        prev_node = soma
-        prev_diameter = None
-        for pt in segm.points:
-            prev_diameter = prev_diameter if prev_diameter else pt.diameters[0]
+        start, end = segm.points[0:2]
+        # Given that the soma is empty, the first segment start point is
+        # placed at 0, 0, 0. The position is corrected after adding the
+        # first section. However, we cannot correct the diamater.
+        section = soma.grow(end.x, end.y, end.z, end.diameters[0],
+                            Section_Type.DENDRITE)
+        section.move_point(0, Vector3f(start.x, start.y, start.z))
 
-            next_node = prev_node.grow(pt.x, pt.y, pt.z, pt.diameters[0], Section_Type.DENDRITE, UNDEFINED_COUNT())
-
-            prev_diameter = pt.diameters[0]
-            prev_node = next_node
-
-            ## Print Out
-            ptstr = "\t<" + repr(pt.x) + "," + repr(pt.y) + "," + repr(pt.z) + ">["
-            ##diametere loop
-            for diam in pt.diameters:
-                ptstr += repr(diam) + ","
-            ptstr += "]"
-            print(ptstr)
-        print ""
+        for pt in segm.points[2:] :
+            section.grow(pt.x, pt.y, pt.z, pt.diameters[0])
 
     return morphology
 
@@ -57,7 +50,7 @@ def create_morphology_file(label, skel):
 
     morphology = create_morphology(skel)
     morphology.label(label)
-    
+
     try:
         directory = os.path.abspath(os.path.curdir)
         writer = Morphology_Writer()
