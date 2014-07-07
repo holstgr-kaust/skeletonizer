@@ -4,14 +4,27 @@ Skeletonizer is a Python tool for converting an Amiramesh skeleton graph, plus a
 
 ## Usage ##
 
+
+```
+#!python
+
 skeletonize.py -h
 skeletonize.py <skeleton>
 skeletonize.py -s <skeleton> [-f] [-o <output_dir>]
 
+```
+
 ## Examples ##
 
-Creates /<path>/cell.Smt.SptGraph.h5 from /<path>/cell.Smt.SptGraph
+Creates */<path>/cell.Smt.SptGraph.h5* from */<path>/cell.Smt.SptGraph*
+
+```
+#!python
+
+
 skeletonize.py -s cell.Smt.SptGraph
+```
+
 
 ## Notes ##
 
@@ -25,4 +38,3 @@ Output file(s) are:
 * <filename>.h5 # BBPSDK HDF5 format'
 
 Display in rtneuron-app.py using: display_morphology_file('/<path>/<filename>.h5')
-
