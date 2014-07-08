@@ -150,8 +150,7 @@ class AmirameshReader(object):
             elif counter == 2:          # segments to nodes
                 match = re.search('(\d+) (\d+)', line)
                 start,end = match.groups()
-                seg = Segment(start, end)
-                #print type(skel), type(skel.add_segment)
+                seg = Segment(int(start), int(end))
                 skel.add_segment(seg)
 
             elif counter == 3:          # point count within segment
@@ -167,11 +166,10 @@ class AmirameshReader(object):
                 y = float(y)
                 z = float(z)
                 p = Point3D(x,y,z)
-                #skel.add_point(linecounter, p)
                 points.append(p)
                 #linecounter += 1
 
-            elif counter > 4:           # one or more diameters
+            elif counter == 5:           # diameter
                 # empty values replaced by 0
                 if line == "nan":
                     line = "0.0"
