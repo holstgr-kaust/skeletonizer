@@ -156,13 +156,12 @@ def create_node_graph(skel):
         edges[segm.end].add(segm.start)
     return edges
 
-def create_directed_graph(somanodes, nodesgraph, allowcycles=True, somaconnected=True):
+def create_directed_graph(somanodes, nodesgraph, options):
     """
     Creates a directed graph dictionary of edges mapping node id to node ids.
     :param somanodes: list of soma node-ids
     :param nodesgraph: bidirectional node-id graph of skeleton structure
-    :param allowcycles: boolean set True to allow cyclic graphs, False forces acyclic graph.
-    :param somaconnected: boolean set True to allow soma nodes to connect to each other, False makes them root nodes.
+    :param options: struct of graph options.
     :return: directed edge dictionary mapping node-id to set of node-ids.
     """
     def node_name(n, snodes, vnodes):
@@ -186,7 +185,7 @@ def create_directed_graph(somanodes, nodesgraph, allowcycles=True, somaconnected
             is_visited = nn in visited
             if (not is_visited):
                 frontier.append(nn)
-            if (somaconnected or nn not in somanodes) and (allowcycles or not is_visited):
+            if (options.k_CONNECT_SOMA_SOMA or nn not in somanodes) and (options.k_ALLOW_CYCLES or not is_visited):
                 edges[n].add(nn)
             else:
                 logging.warning("Warning - Ignoring edge from %s to %s",
@@ -248,19 +247,21 @@ def validate_graph_segments(dgraph, nodesegments, somanodes = None):
 
 
 
-def grow_soma(soma, somanodes, nodesegments, nodes):
+def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options):
     """
     Grows the soma nodes.
-    :param soma: BBPSDK Soma object
-    :param somanodes: list of soma node-ids
-    :param nodesegments: list of segments from amiramesh reader.
+    :param soma: BBPSDK Soma object.
+    :param somanodes: list of soma node-ids.
+    :param nodesegments: dictionary mapping start node-ids to the segments which grow from them.
     :param nodes: dictionary mapping node positions to BBPSDK section.
-    :return: directed edge dictionary mapping node-id to list of node-ids.
+    :param offsets: tuple of (soma_centre, soma_radius).
+    :param options: struct of growth options.
     """
-    soma_spoints = soma.surface_points()
 
-    # TODO: parameterize
-    k_INFLATE_SOMA = False      # Default: True
+    # NOTE: we offset the original graph to centre the soma at origin in BBPSDK morphology, but preserve
+    # the original positions to make it easier to report original graph positions to user
+    scentre, sradius = offsets
+    soma_spoints = soma.surface_points()
 
     # visual debug support
     if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
@@ -274,20 +275,33 @@ def grow_soma(soma, somanodes, nodesegments, nodes):
 
             ndata = segm.points[0]
             npos = (ndata.x, ndata.y, ndata.z)
-            # TODO: Fix vadjust
             snpos = vadjust_offset_length3(npos, scentre, sradius)
 
-            if k_INFLATE_SOMA:
+            if options.k_INFLATE_SOMA:
                 soma_spoints.insert(Vector3f(snpos[0], snpos[1], snpos[2]))
                 nodes[npos] = soma
             else:
+                if logging.getLogger().getEffectiveLevel() < logging.DEBUG:
+                    snpos = vadjust_offset_length3(npos, scentre, 0)
                 node = soma.grow(snpos[0], snpos[1], snpos[2], ndata.diameters[0], Section_Type.DENDRITE)
                 node.move_point(0, Vector3f(snpos[0], snpos[1], snpos[2]))
                 nodes[npos] = node
+
             logging.debug('Root Node: %s', segm.start)
 
 
-def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, depth = -1):
+def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, options, depth = -1):
+    """
+    Grows the node to node segments.
+    :param pnode_idx: node-id of parent node.
+    :param dagnodes: directed edge dictionary mapping node-id to list of node-ids.
+    :param nodesegments: dictionary mapping start node-ids to the segments which grow from them.
+    :param nodes: dictionary mapping node positions to BBPSDK section.
+    :param visited: node-ids of already visited nodes.
+    :param offsets: tuple of (soma_centre, soma_radius).
+    :param depth: debugging: controls growth size; if non-negative specifies max node count; -1 if unlimited
+    :param options: struct of growth options.
+    """
     if (depth == 0):
         logging.warning("Warning - max depth reached for node: %i", pnode_idx)
         return
@@ -295,9 +309,9 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, depth = -1)
     if (pnode_idx in visited):
         return
 
-    # TODO: parameterize
-    k_SEGMENT_THRESHOLD_SQR = 0.001  # Default: 0
-    k_CLIP_INSIDE_SOMA = True       # Default: True
+    # NOTE: we offset the original graph to centre the soma at origin in BBPSDK morphology, but preserve
+    # the original positions to make it easier to report original graph positions to user
+    scentre, sradius = offsets
 
     logging.debug('Growing:%s', str(pnode_idx))
 
@@ -326,26 +340,24 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, depth = -1)
         section = None
         for pt in segm.points[1:-1]:
             pos = (pt.x, pt.y, pt.z)
-            # TODO: Fix vadjust
             pos = vadjust_offset_length3(pos, scentre, 0)
 
             if section:
-                if (distance_squared(pos, prev_pos) >= k_SEGMENT_THRESHOLD_SQR):
+                if (distance_squared(pos, prev_pos) >= options.k_SEGMENT_THRESHOLD_SQR):
                     section.grow(pos[0], pos[1], pos[2], pt.diameters[0])
                     prev_pos = pos
                 else:
                     logging.warning("Warning - ignoring pos: %s too close to previous: %s", pos, prev_pos)
-            elif not k_CLIP_INSIDE_SOMA or vlength(pos) > sradius+pt.diameters[0]:
+            elif not options.k_CLIP_INSIDE_SOMA or vlength(pos) > sradius+pt.diameters[0]:
                 section = node.grow(pos[0], pos[1], pos[2], pt.diameters[0], Section_Type.DENDRITE)
                 prev_pos = pos
 
         # end node
         ndata = segm.points[-1]
         npos = (ndata.x, ndata.y, ndata.z)
-        # TODO: Fix vadjust
         nposadj = vadjust_offset_length3(npos, scentre, max(0, sradius-ndata.diameters[0]))
 
-        if not section and (not k_CLIP_INSIDE_SOMA or vlength(nposadj) >= sradius + ndata.diameters[0]):
+        if not section and (not options.k_CLIP_INSIDE_SOMA or vlength(nposadj) >= sradius + ndata.diameters[0]):
             section = node
 
         if npos not in nodes:
@@ -357,10 +369,10 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, depth = -1)
 
     # grow children
     for cn_idx in dagnodes[pnode_idx]:
-        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, depth - 1 if depth > 0 else -1)
+        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, offsets, options, depth - 1 if depth > 0 else -1)
 
 
-def create_morphology(skel, soma_data, depth = -1):
+def create_morphology(skel, soma_data, options):
     """
     creates morphology from the skeleton obtained
     :param skel: skeleton data structure from amiramesh reader
@@ -368,23 +380,28 @@ def create_morphology(skel, soma_data, depth = -1):
     :param depth: constrain the growth size to max depth size deep (or unlimited if -1)
     :return: BBPsdk morphology of the skeleton
     """
+    class morph_options:
+        # boolean set True to allow cyclic graphs, False forces acyclic graph.
+        k_ALLOW_CYCLES = True                                                           # Default: False
+        # boolean set True to allow soma nodes to connect to each other, False makes them root nodes.
+        k_CONNECT_SOMA_SOMA = options.verbosity_level <= logging.NOTSET                 # Default: False
+
+        # float specifies minimum length between segment arcs (inter-node section edges)
+        k_SEGMENT_THRESHOLD_SQR = options.threshold_segment_length                      # Default: 0
+        # boolean set True to start segments after they leave the soma
+        k_CLIP_INSIDE_SOMA = options.verbosity_level > logging.NOTSET                   # Default: True
+
+        # boolean set True to create normal BBPSDK soma node; False creates zero sized node for debugging
+        k_INFLATE_SOMA = options.verbosity_level > logging.NOTSET                       # Default: True
+
+
+    depth = options.graph_depth
 
     # Collect soma nodes
-    soma_center = (soma_data['centre']['x'], soma_data['centre']['y'], soma_data['centre']['z'])
+    soma_centre = (soma_data['centre']['x'], soma_data['centre']['y'], soma_data['centre']['z'])
     soma_radius = soma_data['radius']
 
-    # TODO: parameterize
-    k_CONNECT_SOMA_SOMA = False  # Default: False
-    k_ALLOW_CYCLES = True # Default: False
-
-    # TODO: Fix hack
-    global scentre
-    global sradius
-    scentre = soma_center
-    sradius = soma_radius
-    depth = -1
-
-    soma_node_idxs = collect_soma_nodes(soma_center, soma_radius, skel.nodes)
+    soma_node_idxs = collect_soma_nodes(soma_centre, soma_radius, skel.nodes)
 
     npositions = collect_node_positions(skel.nodes)
     show_node_pos_stats(npositions)
@@ -394,12 +411,12 @@ def create_morphology(skel, soma_data, depth = -1):
     # Create graph / data-structures of skeleton
     # NOTE: creating the directed graph also re-orders the segment directions (required to grow correctly)
     node_idx_graph = create_node_graph(skel)
-    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph, k_ALLOW_CYCLES, k_CONNECT_SOMA_SOMA)
+    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph, morph_options)
     node_segments = create_node_segments_dict(skel.segments, dag_nodes)
 
     # TODO: add better tools for analysing the connectivity of unreachable nodes
     # some nodes are unreachable islands in the graph (no path from the soma); we validate and warn
-    validate_graph_segments(dag_nodes, node_segments, soma_node_idxs if k_CONNECT_SOMA_SOMA else None)
+    validate_graph_segments(dag_nodes, node_segments, soma_node_idxs if morph_options.k_CONNECT_SOMA_SOMA else None)
 
     # Grow nodes
     morphology = Morphology()
@@ -407,13 +424,13 @@ def create_morphology(skel, soma_data, depth = -1):
     nodes = {}
 
     # Grow soma nodes
-    grow_soma(soma, soma_node_idxs, node_segments, nodes)
+    grow_soma(soma, soma_node_idxs, node_segments, nodes, (soma_centre, soma_radius), morph_options)
 
     # Grow segments from inside (soma nodes) out
     visited = []
     for snidx in soma_node_idxs:
         logging.debug('Growing Soma Node:%s', str(snidx))
-        grow_segments(snidx, dag_nodes, node_segments, nodes, visited, depth)
+        grow_segments(snidx, dag_nodes, node_segments, nodes, visited, (soma_centre, soma_radius), morph_options, depth)
 
     return morphology
 
@@ -455,7 +472,8 @@ if __name__ == '__main__':
         skel_json_file = None
         skel_out_file = None
 
-        verbosity_level = logging.ERROR
+        verbosity_level = logging.INFO
+        threshold_segment_length = 0
         graph_depth = -1
 
         @staticmethod
@@ -494,7 +512,7 @@ if __name__ == '__main__':
     logging.basicConfig(format=k_FORMAT, level=options.verbosity_level)
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hfs:o:v:",["skeleton=","output_dir=","verbose="])
+        opts, args = getopt.getopt(sys.argv[1:],"hfs:o:v:t:",["skeleton=","output_dir=","verbose=","threshold="])
     except getopt.GetoptError:
         print 'skeletonize.py -h'
         sys.exit(2)
@@ -508,6 +526,7 @@ if __name__ == '__main__':
                 print '\t -s <filename>\t Input skeleton filename'
                 print '\t -f \t\t Force overwrite of output files'
                 print '\t -v <level>\t Set verbosity level: %i-%i' % (logging.NOTSET, logging.FATAL)
+                print '\t -t <threshold>\t Set minimum segment arc length (default 0)'
                 print '\t -o <dirname>\t Output directory'
                 print '\nExample:'
                 print '\t # creates /<path>/cell.Smt.SptGraph.h5 from /<path>/cell.Smt.SptGraph'
@@ -519,12 +538,14 @@ if __name__ == '__main__':
                 print '\t Output file(s) are:'
                 print '\t\t <filename>.h5 # BBPSDK HDF5 format'
                 print '\t Verbosity levels(s) are:'
-                print '\t\t all=0, debug=10, info=20, warning=30, ERROR=40'
-                print '\t\t ERROR is the default logging level'
+                print '\t\t all=0, debug=10, INFO=20, warning=30, error=40'
+                print '\t\t INFO is the default logging level'
                 print '\t\t Debug logging levels include visual debugging artifacts added to the morphology file.'
                 print '\t\t Visual debugging includes:'
                 print '\t\t\t Soma star: representation of soma size and location.'
                 print '\t\t\t Coordinate axis: X, Y, Z are represented as three bars with end-fingers (0=X,1=Y,2=Z).'
+                print '\t\t All logging level includes additional visual debugging artifacts:'
+                print '\t\t\t Soma dendrites: visual representation of original source soma skeleton.'
                 print '\t Display in rtneuron-app.py using: display_morphology_file(\'/<path>/<filename>.h5\')'
                 sys.exit()
             elif opt == '-f':
@@ -533,18 +554,20 @@ if __name__ == '__main__':
                 options.verbosity_level = int(arg)
                 logging.getLogger().setLevel(options.verbosity_level)
                 logging.info("Verbosity set to: %i", options.verbosity_level)
+            elif opt in ('-t', "--threshold"):
+                options.threshold_segment_length = float(arg)
+                logging.info("Segment length threshold set to: %f", options.threshold_segment_length)
             elif opt in ("-s", "--skeleton"):
                 options.set_pathname(arg)
             elif opt in ("-o", "--output_dir"):
                 options.skel_out_path = arg
                 if (not os.path.isdir(options.skel_out_path)):
-                    print 'ERROR - Output directory must be directory:' + options.skel_out_path
+                    logging.error('ERROR - Output directory must be directory:%s', options.skel_out_path)
                     sys.exit(4)
 
         if not opts:
             if len(sys.argv) != 2:
-                print 'Expected skeleton source.'
-                print 'skeletonize.py -h'
+                logging.error('Expected skeleton source. Try: skeletonize.py -h')
                 sys.exit(2)
             options.set_pathname(sys.argv[1])
 
@@ -552,11 +575,11 @@ if __name__ == '__main__':
 
         options.validate()
 
-        print 'HDF5 Skeletonizer'
-        print '\t Source graph: ' + options.skel_am_file
-        print '\t Source annotations: ' + options.skel_json_file
+        logging.info('HDF5 Skeletonizer')
+        logging.info('\t Source graph: %s', options.skel_am_file)
+        logging.info('\t Source annotations: %s', options.skel_json_file)
         if options.force_overwrite:
-            print '\nFORCING OVERWRITE of output file: ' + options.skel_out_file + '\n'
+            logging.info('\nFORCING OVERWRITE of output file: %s\n', options.skel_out_file)
 
         reader = AmirameshReader()
 
@@ -566,11 +589,11 @@ if __name__ == '__main__':
         with open(options.skel_json_file, 'r') as f:
             data = json.load(f)
 
-        morphology = create_morphology(skel, data['soma'], options.graph_depth)
+        morphology = create_morphology(skel, data['soma'], options)
 
         create_morphology_file(morphology, options)
 
-        print 'Wrote out file: ' + options.skel_out_file
+        logging.info('Wrote out file: %s', options.skel_out_file)
 
     finally:
         logging.shutdown()
