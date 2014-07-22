@@ -522,12 +522,12 @@ if __name__ == '__main__':
                 print 'Skeletonize converts an Amiramesh skeleton graph, plus annotations, into a BBPSDK cell morphology.'
                 print '\nUsage:'
                 print ' skeletonize.py <skeleton>'
-                print ' skeletonize.py -s <skeleton> [-f] [-o <output_dir>]'
+                print ' skeletonize.py -s <skeleton> [-f] [-o <output_dir>] [-v <level>] [-t <threshold>]'
                 print '\t -s <filename>\t Input skeleton filename'
                 print '\t -f \t\t Force overwrite of output files'
+                print '\t -o <dirname>\t Output directory'
                 print '\t -v <level>\t Set verbosity level: %i-%i' % (logging.NOTSET, logging.FATAL)
                 print '\t -t <threshold>\t Set minimum segment arc length (default 0)'
-                print '\t -o <dirname>\t Output directory'
                 print '\nExample:'
                 print '\t # creates /<path>/cell.Smt.SptGraph.h5 from /<path>/cell.Smt.SptGraph'
                 print '\t skeletonize.py -s cell.Smt.SptGraph'
@@ -546,6 +546,7 @@ if __name__ == '__main__':
                 print '\t\t\t Coordinate axis: X, Y, Z are represented as three bars with end-fingers (0=X,1=Y,2=Z).'
                 print '\t\t All logging level includes additional visual debugging artifacts:'
                 print '\t\t\t Soma dendrites: visual representation of original source soma skeleton.'
+                print '\t Threshold currently specifies the minimum segment section length.'
                 print '\t Display in rtneuron-app.py using: display_morphology_file(\'/<path>/<filename>.h5\')'
                 sys.exit()
             elif opt == '-f':
