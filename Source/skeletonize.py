@@ -137,8 +137,8 @@ def debug_soma(soma, radius):
     # exterior
     for a in range(0,k_POINTS):
         ang = a * (360.0 / k_POINTS)
-        i = math.sin(ang) * sradius
-        j = math.cos(ang) * sradius
+        i = math.sin(ang) * radius
+        j = math.cos(ang) * radius
         n = soma.grow(i,j,0, 0.1, Section_Type.DENDRITE)
         n = soma.grow(i,0,j, 0.1, Section_Type.DENDRITE)
         n = soma.grow(0,i,j, 0.1, Section_Type.DENDRITE)
