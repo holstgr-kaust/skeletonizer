@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import re
 
 
@@ -9,33 +8,46 @@ import re
 class Node(object):
     """Graph node point class in 3D space """
 
-    def __init__(self, x=0, y=0, z=0):
+    def __init__(self, x=0.0, y=0.0, z=0.0):
         self.x = x
         self.y = y
         self.z = z
+
+    def list(self):
+        """ Returns a list of XYZ values"""
+        return [self.x, self.y, self.z]
+
+    def position(self):
+        """ Returns a tuple of XYZ values"""
+        return (self.x, self.y, self.z)
 
 #
 # 3D point class
 #
 
 class Point3D(Node):
-    """3D Point class with public x,y,z attributes and an optional array
-    of diameters"""
+    """3D Point class with public x,y,z attributes and a diameter"""
 
-    def __init__(self, x=0, y=0, z=0):
+    def __init__(self, x=0.0, y=0.0, z=0.0, d=0.0):
         self.x = x
         self.y = y
         self.z = z
-
-        self.diameters = []
+        self.diameter = d
 
     def list(self):
-        """ Returns a list of XYX values"""
-        return [self.x, self.y, self.z]
+        """ Returns a list of XYZD values"""
+        return [self.x, self.y, self.z, self.diameter]
 
-    def add_diameter(self, dia):
-        """ Add one float diameter value"""
-        self.diameters.append(dia)
+    def position(self):
+        """ Returns a tuple of XYZ values"""
+        return (self.x, self.y, self.z)
+
+    def set_diameter(self, dia):
+        """
+        Set diameter value
+        :param dia: Float diameter value
+        """
+        self.diameter = dia
 
 
 #
@@ -177,7 +189,7 @@ class AmirameshReader(object):
                 match = re.search('([\d\.e\+\-]+)', line)
                 dia = match.groups()[0]
                 dia = float(dia)
-                points[linecounter].add_diameter(dia)
+                points[linecounter].set_diameter(dia)
                 linecounter += 1
 
         # add points in the end for efficiency

@@ -16,6 +16,7 @@ from collections import defaultdict
 from bbp_import_module import *
 from amiramesh import *
 
+
 # TODO: move helper math functions into its own simple_math module, or replace with numpy
 def vlogger(func):
     def inner(*args, **kwargs):
@@ -90,7 +91,7 @@ def collect_soma_nodes(pos, radius, nodes):
     soma_ids = []
     rsqr = square(radius)
     for nidx, node in nodes.iteritems():
-        npos = (node.x, node.y, node.z)
+        npos = node.position()
         dsqr = distance_squared(pos, npos)
 
         if dsqr <= rsqr:
@@ -105,7 +106,7 @@ def collect_node_positions(nodes):
     :param nodes: nodes list in skeleton data structure from amiramesh reader.
     :return: list of node positions.
     """
-    return [(node.x, node.y, node.z) for nidx, node in nodes.iteritems()]
+    return [node.position() for nidx, node in nodes.iteritems()]
 
 def show_node_pos_stats(nodepositions):
     x = map(lambda a: a[0], nodepositions)
@@ -115,6 +116,92 @@ def show_node_pos_stats(nodepositions):
     logging.info( "X max:%s min:%s avg:%s", max(x), min(x), sum(x)/float(len(x)))
     logging.info( "Y max:%s min:%s avg:%s", max(y), min(y), sum(y)/float(len(y)))
     logging.info( "Z max:%s min:%s avg:%s", max(z), min(z), sum(z)/float(len(z)))
+
+def show_graph_stats(dag_nodes, node_segments):
+    """
+    :param dag_nodes: directed edge dictionary mapping node-id to set of node-ids.
+    :param node_segments: dictionary mapping start node-ids to the segments which grow from them.
+    """
+    csize = 20
+    ecnts = [len(ns) for _, ns in dag_nodes.iteritems()]
+    ncnts = [len(ns) for _, ns in node_segments.iteritems()]
+    necnts = [len(ns) for i, ns in node_segments.iteritems() if i in dag_nodes]
+
+    logging.info("DAG (%s) Edge count:%s max:%s min:%s avg:%s", len(ecnts), sum(ecnts), max(ecnts), min(ecnts), sum(ecnts)/float(len(ecnts)))
+    logging.info("DAG Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(necnts), sum(necnts), max(necnts), min(necnts), sum(necnts)/float(len(necnts)))
+    logging.info("Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(ncnts), sum(ncnts), max(ncnts), min(ncnts), sum(ncnts)/float(len(ncnts)))
+
+    posdict = defaultdict(lambda : 0)
+    for _, ns in node_segments.iteritems():
+        for seg in ns:
+            for pt in seg.points:
+                posdict[pt] += 1
+    dpcnts = [cnt for i, cnt in posdict.iteritems() if cnt > 1 ]
+    dpcnts.sort()
+    dpcnts.reverse()
+
+    if dpcnts:
+        logging.info("Unique Segment positions:%s Duplicate positions:%s Total non-unique positions:%s Duplicates per position max:%s min:%s avg:%s",
+                        len(posdict), len(dpcnts), sum(dpcnts), max(dpcnts), min(dpcnts), sum(dpcnts)/float(len(dpcnts)))
+        logging.info(" Max %s position duplicate counts:%s", csize, dpcnts[:csize])
+    else:
+        logging.info("No duplicate positions in node and segment graphs.")
+
+def show_grow_stats(stats, soma):
+    """
+    :param soma: BBPSDK Soma object
+    """
+
+    node_grow_stats = stats.node_grow_stats
+
+    csize = 30
+    gcnts = [len(ns) for _, ns in node_grow_stats.iteritems()]
+    gcnts.sort()
+    gcnts.reverse()
+
+    if gcnts:
+        bcnts = [i for i in gcnts if i > 1]
+        logging.info("Grown Node (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(gcnts), sum(gcnts), max(gcnts), min(gcnts), sum(gcnts)/float(len(gcnts)))
+        if soma in node_grow_stats:
+            logging.info(" Soma grown node counts:%s", len(node_grow_stats[soma]))
+        else:
+            logging.info("WARNING - No nodes grown from Soma")
+
+        logging.info(" Max %i counts:%s", csize, gcnts[:csize])
+        logging.info(" Min %i counts:%s", csize, gcnts[-csize:])
+
+        logging.info("Grown Branching Node (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(bcnts), sum(bcnts), max(bcnts), min(bcnts), sum(bcnts)/float(len(bcnts)))
+        logging.info(" Max %i counts:%s", csize, bcnts[:csize])
+        logging.info(" Min %i counts:%s", csize, bcnts[-csize:])
+    else:
+        logging.warning("No Grown Nodes")
+
+def show_warning_stats(stats):
+    warnings = False
+    WARN_UNCONNECTED_SEGMENTS_cnt = stats.warn_counts[stats.k_WARN_UNCONNECTED_SEGMENTS]
+    WARN_IGNORED_EDGES_cnt = stats.warn_counts[stats.k_WARN_IGNORED_EDGES]
+    WARN_MAX_GROW_DEPTH_REACHED_cnt = stats.warn_counts[stats.k_WARN_MAX_GROW_DEPTH_REACHED]
+    INFO_IGNORED_POSITIONS_cnt = stats.warn_counts[stats.k_INFO_IGNORED_POSITIONS]
+
+    if WARN_UNCONNECTED_SEGMENTS_cnt > 0:
+        warnings = True
+        logging.warning("WARNING - %s Unconnected Segments (edge-islands not reachable from soma)", WARN_UNCONNECTED_SEGMENTS_cnt)
+
+    if WARN_IGNORED_EDGES_cnt > 0:
+        warnings = True
+        logging.warning("WARNING - %s Ignored Edges (possible segments returning into soma or cycles in original graph)", WARN_IGNORED_EDGES_cnt)
+
+    if WARN_MAX_GROW_DEPTH_REACHED_cnt > 0:
+        warnings = True
+        logging.warning("WARNING - Reached maximum grow depth %s times", WARN_MAX_GROW_DEPTH_REACHED_cnt)
+
+    if INFO_IGNORED_POSITIONS_cnt > 0:
+        warnings = True
+        logging.info("INFO - %s Ignored Segments Positions (thresholded)", INFO_IGNORED_POSITIONS_cnt)
+
+    if warnings:
+        logging.warning("NOTE: To view warning and info details, enable DEBUG verbosity: -v 10")
+
 
 def debug_soma(soma, radius):
     """
@@ -156,12 +243,13 @@ def create_node_graph(skel):
         edges[segm.end].add(segm.start)
     return edges
 
-def create_directed_graph(somanodes, nodesgraph, options):
+def create_directed_graph(somanodes, nodesgraph, options, stats):
     """
     Creates a directed graph dictionary of edges mapping node id to node ids.
     :param somanodes: list of soma node-ids
     :param nodesgraph: bidirectional node-id graph of skeleton structure
     :param options: struct of graph options.
+    :param stats: statistic collection object
     :return: directed edge dictionary mapping node-id to set of node-ids.
     """
     def node_name(n, snodes, vnodes):
@@ -188,16 +276,18 @@ def create_directed_graph(somanodes, nodesgraph, options):
             if (options.k_CONNECT_SOMA_SOMA or nn not in somanodes) and (options.k_ALLOW_CYCLES or not is_visited):
                 edges[n].add(nn)
             else:
-                logging.warning("Warning - Ignoring edge from %s to %s",
+                stats.warn_counts[stats.k_WARN_IGNORED_EDGES] += 1
+                logging.debug("WARNING - Ignoring edge from %s to %s",
                       node_name(n, somanodes, visited), node_name(nn, somanodes, visited))
 
     return edges
 
-def create_node_segments_dict(segments, dgraph):
+def create_node_segments_dict(segments, dgraph, stats):
     """
     Creates a dictionary of correctly ordered segments ordered according to the dgraph.
     :param segments: list of segments from amiramesh reader.
     :param dgraph: directed node-id graph.
+    :param stats: statistic collection object
     :return: dictionary mapping start node-ids to the segments which grow from them.
     """
     nodesegments = defaultdict(lambda: [])
@@ -214,7 +304,8 @@ def create_node_segments_dict(segments, dgraph):
             connected = True
 
         if not connected:
-            logging.warning("WARNING - unconnected segment %s->%s with %i points", s.start, s.end, len(s.points))
+            stats.warn_counts[stats.k_WARN_UNCONNECTED_SEGMENTS] += 1
+            logging.debug("WARNING - unconnected segment %s->%s with %i points", s.start, s.end, len(s.points))
 
     return nodesegments
 
@@ -247,7 +338,7 @@ def validate_graph_segments(dgraph, nodesegments, somanodes = None):
 
 
 
-def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options):
+def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
     """
     Grows the soma nodes.
     :param soma: BBPSDK Soma object.
@@ -256,6 +347,7 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options):
     :param nodes: dictionary mapping node positions to BBPSDK section.
     :param offsets: tuple of (soma_centre, soma_radius).
     :param options: struct of growth options.
+    :param stats: statistic collection object
     """
 
     # NOTE: we offset the original graph to centre the soma at origin in BBPSDK morphology, but preserve
@@ -274,7 +366,7 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options):
             assert(segm.start == snode_idx)
 
             ndata = segm.points[0]
-            npos = (ndata.x, ndata.y, ndata.z)
+            npos = ndata.position()
             snpos = vadjust_offset_length3(npos, scentre, sradius)
 
             if options.k_INFLATE_SOMA:
@@ -283,14 +375,15 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options):
             else:
                 if logging.getLogger().getEffectiveLevel() < logging.DEBUG:
                     snpos = vadjust_offset_length3(npos, scentre, 0)
-                node = soma.grow(snpos[0], snpos[1], snpos[2], ndata.diameters[0], Section_Type.DENDRITE)
+                node = soma.grow(snpos[0], snpos[1], snpos[2], ndata.diameter, Section_Type.DENDRITE)
+                stats.node_grow_stats[soma].append(snpos)
                 node.move_point(0, Vector3f(snpos[0], snpos[1], snpos[2]))
                 nodes[npos] = node
 
             logging.debug('Root Node: %s', segm.start)
 
 
-def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, options, depth = -1):
+def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, options, stats, depth = -1):
     """
     Grows the node to node segments.
     :param pnode_idx: node-id of parent node.
@@ -299,11 +392,13 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
     :param nodes: dictionary mapping node positions to BBPSDK section.
     :param visited: node-ids of already visited nodes.
     :param offsets: tuple of (soma_centre, soma_radius).
-    :param depth: debugging: controls growth size; if non-negative specifies max node count; -1 if unlimited
     :param options: struct of growth options.
+    :param stats: statistic collection object
+    :param depth: debugging: controls growth size; if non-negative specifies max node count; -1 if unlimited
     """
     if (depth == 0):
-        logging.warning("Warning - max depth reached for node: %i", pnode_idx)
+        stats.warn_counts[stats.k_WARN_MAX_GROW_DEPTH_REACHED] += 1
+        logging.debug("WARNING - max depth reached for node: %i", pnode_idx)
         return
 
     if (pnode_idx in visited):
@@ -327,9 +422,9 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
 
         # ndata is the parent node data (first in the segment); spt is the first section
         ndata = segm.points[0]
-        npos = (ndata.x, ndata.y, ndata.z)
+        npos = ndata.position()
 
-        logging.debug('Segment Start:%s End:%s', str(segm.end), str(segm.start))
+        logging.debug('Segment Start:%s End:%s', str(segm.start), str(segm.end))
 
         # start node should already exist
         assert(npos in nodes), 'Missing start node - id: %i, npos: %s' % (segm.start, npos)
@@ -339,37 +434,41 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
         # growth begins when segment exits soma
         section = None
         for pt in segm.points[1:-1]:
-            pos = (pt.x, pt.y, pt.z)
+            pos = pt.position()
             pos = vadjust_offset_length3(pos, scentre, 0)
 
             if section:
                 if (distance_squared(pos, prev_pos) >= options.k_SEGMENT_THRESHOLD_SQR):
-                    section.grow(pos[0], pos[1], pos[2], pt.diameters[0])
+                    section.grow(pos[0], pos[1], pos[2], pt.diameter)
                     prev_pos = pos
                 else:
-                    logging.warning("Warning - ignoring pos: %s too close to previous: %s", pos, prev_pos)
-            elif not options.k_CLIP_INSIDE_SOMA or vlength(pos) > sradius+pt.diameters[0]:
-                section = node.grow(pos[0], pos[1], pos[2], pt.diameters[0], Section_Type.DENDRITE)
+                    stats.warn_counts[stats.k_INFO_IGNORED_POSITIONS] += 1
+                    logging.debug("INFO - ignoring pos: %s too close to previous: %s", pos, prev_pos)
+            elif not options.k_CLIP_INSIDE_SOMA or vlength(pos) > sradius+pt.diameter:
+                section = node.grow(pos[0], pos[1], pos[2], pt.diameter, Section_Type.DENDRITE)
+                stats.node_grow_stats[node].append(pos)
                 prev_pos = pos
 
         # end node
         ndata = segm.points[-1]
-        npos = (ndata.x, ndata.y, ndata.z)
-        nposadj = vadjust_offset_length3(npos, scentre, max(0, sradius-ndata.diameters[0]))
+        npos = ndata.position()
+        nposadj = vadjust_offset_length3(npos, scentre, max(0, sradius-ndata.diameter))
 
-        if not section and (not options.k_CLIP_INSIDE_SOMA or vlength(nposadj) >= sradius + ndata.diameters[0]):
+        if not section and (not options.k_CLIP_INSIDE_SOMA or vlength(nposadj) >= sradius + ndata.diameter):
             section = node
 
         if npos not in nodes:
             if section:
-                nodes[npos] = section.grow(nposadj[0], nposadj[1], nposadj[2], ndata.diameters[0], Section_Type.DENDRITE)
+                nodes[npos] = section.grow(nposadj[0], nposadj[1], nposadj[2], ndata.diameter, Section_Type.DENDRITE)
+                stats.node_grow_stats[section].append(nposadj)
+                logging.debug('New Node:%s', str(segm.end))
             else:
                 nodes[npos] = node
-            logging.debug('New Node:%s', str(segm.end))
+                logging.debug('Reusing Start Node:%s as End Node:%s', str(segm.start), str(segm.end))
 
     # grow children
     for cn_idx in dagnodes[pnode_idx]:
-        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, offsets, options, depth - 1 if depth > 0 else -1)
+        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, offsets, options, stats, depth - 1 if depth > 0 else -1)
 
 
 def create_morphology(skel, soma_data, options):
@@ -382,7 +481,7 @@ def create_morphology(skel, soma_data, options):
     """
     class morph_options:
         # boolean set True to allow cyclic graphs, False forces acyclic graph.
-        k_ALLOW_CYCLES = True                                                           # Default: False
+        k_ALLOW_CYCLES = options.allow_cycles                                           # Default: False
         # boolean set True to allow soma nodes to connect to each other, False makes them root nodes.
         k_CONNECT_SOMA_SOMA = options.verbosity_level <= logging.NOTSET                 # Default: False
 
@@ -394,6 +493,18 @@ def create_morphology(skel, soma_data, options):
         # boolean set True to create normal BBPSDK soma node; False creates zero sized node for debugging
         k_INFLATE_SOMA = options.verbosity_level > logging.NOTSET                       # Default: True
 
+    class morph_statistics:
+        k_WARN_UNCONNECTED_SEGMENTS = 1
+        k_WARN_IGNORED_EDGES = 2
+        k_WARN_MAX_GROW_DEPTH_REACHED = 3
+        k_INFO_IGNORED_POSITIONS = 100
+
+        # dictionary mapping warning and info categories above to occurance counts
+        warn_counts = defaultdict(lambda: 0)
+
+        # dictionary mapping BBPSDK nodes to the positions grown from them.
+        node_grow_stats = defaultdict(lambda: [])
+
 
     depth = options.graph_depth
 
@@ -404,15 +515,17 @@ def create_morphology(skel, soma_data, options):
     soma_node_idxs = collect_soma_nodes(soma_centre, soma_radius, skel.nodes)
 
     npositions = collect_node_positions(skel.nodes)
-    show_node_pos_stats(npositions)
 
+    show_node_pos_stats(npositions)
     logging.info('Collected %s soma nodes out of %s total nodes',  str(len(soma_node_idxs)), str(len(skel.nodes)))
 
     # Create graph / data-structures of skeleton
     # NOTE: creating the directed graph also re-orders the segment directions (required to grow correctly)
     node_idx_graph = create_node_graph(skel)
-    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph, morph_options)
-    node_segments = create_node_segments_dict(skel.segments, dag_nodes)
+    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph, morph_options, morph_statistics)
+    node_segments = create_node_segments_dict(skel.segments, dag_nodes, morph_statistics)
+
+    show_graph_stats(dag_nodes, node_segments)
 
     # TODO: add better tools for analysing the connectivity of unreachable nodes
     # some nodes are unreachable islands in the graph (no path from the soma); we validate and warn
@@ -424,13 +537,16 @@ def create_morphology(skel, soma_data, options):
     nodes = {}
 
     # Grow soma nodes
-    grow_soma(soma, soma_node_idxs, node_segments, nodes, (soma_centre, soma_radius), morph_options)
+    grow_soma(soma, soma_node_idxs, node_segments, nodes, (soma_centre, soma_radius), morph_options, morph_statistics)
 
     # Grow segments from inside (soma nodes) out
     visited = []
     for snidx in soma_node_idxs:
         logging.debug('Growing Soma Node:%s', str(snidx))
-        grow_segments(snidx, dag_nodes, node_segments, nodes, visited, (soma_centre, soma_radius), morph_options, depth)
+        grow_segments(snidx, dag_nodes, node_segments, nodes, visited, (soma_centre, soma_radius), morph_options, morph_statistics, depth)
+
+    show_grow_stats(morph_statistics, soma)
+    show_warning_stats(morph_statistics)
 
     return morphology
 
@@ -474,6 +590,7 @@ if __name__ == '__main__':
 
         verbosity_level = logging.INFO
         threshold_segment_length = 0
+        allow_cycles = False
         graph_depth = -1
 
         @staticmethod
@@ -512,7 +629,7 @@ if __name__ == '__main__':
     logging.basicConfig(format=k_FORMAT, level=options.verbosity_level)
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hfs:o:v:t:",["skeleton=","output_dir=","verbose=","threshold="])
+        opts, args = getopt.getopt(sys.argv[1:],"hfas:o:v:t:",["skeleton=","output_dir=","verbose=","threshold="])
     except getopt.GetoptError:
         print 'skeletonize.py -h'
         sys.exit(2)
@@ -522,12 +639,13 @@ if __name__ == '__main__':
                 print 'Skeletonize converts an Amiramesh skeleton graph, plus annotations, into a BBPSDK cell morphology.'
                 print '\nUsage:'
                 print ' skeletonize.py <skeleton>'
-                print ' skeletonize.py -s <skeleton> [-f] [-o <output_dir>] [-v <level>] [-t <threshold>]'
-                print '\t -s <filename>\t Input skeleton filename'
+                print ' skeletonize.py [-v <level>] [-a] [-t <threshold>] -s <skeleton> [-f] [-o <output_dir>]'
+                print '\t -a \t\t Allow cycles in skeleton graph (default False)'
                 print '\t -f \t\t Force overwrite of output files'
                 print '\t -o <dirname>\t Output directory'
-                print '\t -v <level>\t Set verbosity level: %i-%i' % (logging.NOTSET, logging.FATAL)
+                print '\t -s <filename>\t Input skeleton filename'
                 print '\t -t <threshold>\t Set minimum segment arc length (default 0)'
+                print '\t -v <level>\t Set verbosity level: %i-%i' % (logging.NOTSET, logging.FATAL)
                 print '\nExample:'
                 print '\t # creates /<path>/cell.Smt.SptGraph.h5 from /<path>/cell.Smt.SptGraph'
                 print '\t skeletonize.py -s cell.Smt.SptGraph'
@@ -549,22 +667,25 @@ if __name__ == '__main__':
                 print '\t Threshold currently specifies the minimum segment section length.'
                 print '\t Display in rtneuron-app.py using: display_morphology_file(\'/<path>/<filename>.h5\')'
                 sys.exit()
+            elif opt == '-a':
+                options.allow_cycles = True
+                logging.info("Allow Cycles set to: %s", options.allow_cycles)
             elif opt == '-f':
                 options.force_overwrite = True
-            elif opt in ('-v', "--verbose"):
-                options.verbosity_level = int(arg)
-                logging.getLogger().setLevel(options.verbosity_level)
-                logging.info("Verbosity set to: %i", options.verbosity_level)
-            elif opt in ('-t', "--threshold"):
-                options.threshold_segment_length = float(arg)
-                logging.info("Segment length threshold set to: %f", options.threshold_segment_length)
-            elif opt in ("-s", "--skeleton"):
-                options.set_pathname(arg)
             elif opt in ("-o", "--output_dir"):
                 options.skel_out_path = arg
                 if (not os.path.isdir(options.skel_out_path)):
                     logging.error('ERROR - Output directory must be directory:%s', options.skel_out_path)
                     sys.exit(4)
+            elif opt in ("-s", "--skeleton"):
+                options.set_pathname(arg)
+            elif opt in ('-t', "--threshold"):
+                options.threshold_segment_length = float(arg)
+                logging.info("Segment length threshold set to: %f", options.threshold_segment_length)
+            elif opt in ('-v', "--verbose"):
+                options.verbosity_level = int(arg)
+                logging.getLogger().setLevel(options.verbosity_level)
+                logging.info("Verbosity set to: %i", options.verbosity_level)
 
         if not opts:
             if len(sys.argv) != 2:
