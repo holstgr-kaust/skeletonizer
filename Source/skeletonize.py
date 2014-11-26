@@ -126,10 +126,25 @@ def show_graph_stats(dag_nodes, node_segments):
     ecnts = [len(ns) for _, ns in dag_nodes.iteritems()]
     ncnts = [len(ns) for _, ns in node_segments.iteritems()]
     necnts = [len(ns) for i, ns in node_segments.iteritems() if i in dag_nodes]
+    len_ecnts = len(ecnts)
+    len_necnts = len(necnts)
+    len_ncnts = len(ncnts)
 
-    logging.info("DAG (%s) Edge count:%s max:%s min:%s avg:%s", len(ecnts), sum(ecnts), max(ecnts), min(ecnts), sum(ecnts)/float(len(ecnts)))
-    logging.info("DAG Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(necnts), sum(necnts), max(necnts), min(necnts), sum(necnts)/float(len(necnts)))
-    logging.info("Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(ncnts), sum(ncnts), max(ncnts), min(ncnts), sum(ncnts)/float(len(ncnts)))
+    logging.info("DAG (%s) Edge count:%s max:%s min:%s avg:%s",
+                 len_ecnts, sum(ecnts),
+                 max(ecnts) if len_ecnts > 0 else 'N/A',
+                 min(ecnts) if len_ecnts > 0 else 'N/A',
+                 sum(ecnts)/float(len_ecnts) if len_ecnts > 0 else 'N/A')
+    logging.info("DAG Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s",
+                 len_necnts, sum(necnts),
+                 max(necnts) if len_necnts > 0 else 'N/A',
+                 min(necnts) if len_necnts > 0 else 'N/A',
+                 sum(necnts)/float(len_necnts) if len_necnts > 0 else 'N/A')
+    logging.info("Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s",
+                 len_ncnts, sum(ncnts),
+                 max(ncnts) if len_ncnts > 0 else 'N/A',
+                 min(ncnts) if len_ncnts > 0 else 'N/A',
+                 sum(ncnts)/float(len_ncnts) if len_ncnts > 0 else 'N/A')
 
     posdict = defaultdict(lambda : 0)
     for _, ns in node_segments.iteritems():
