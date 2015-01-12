@@ -368,6 +368,7 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
     # NOTE: we offset the original graph to centre the soma at origin in BBPSDK morphology, but preserve
     # the original positions to make it easier to report original graph positions to user
     scentre, sradius = offsets
+    scale = options.k_SCALING_FACTOR
     soma_spoints = soma.surface_points()
 
     # visual debug support
@@ -385,14 +386,18 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
             snpos = vadjust_offset_length3(npos, scentre, sradius)
 
             if options.k_INFLATE_SOMA:
-                soma_spoints.insert(Vector3f(snpos[0], snpos[1], snpos[2]))
+                spos = vmuls3(snpos, scale)
+                sdiameter = ndata.diameter * scale
+                soma_spoints.insert(Vector3f(spos[0], spos[1], spos[2]))
                 nodes[npos] = soma
             else:
                 if logging.getLogger().getEffectiveLevel() < logging.DEBUG:
                     snpos = vadjust_offset_length3(npos, scentre, 0)
-                node = soma.grow(snpos[0], snpos[1], snpos[2], ndata.diameter, Section_Type.DENDRITE)
+                spos = vmuls3(snpos, scale)
+                sdiameter = ndata.diameter * scale
+                node = soma.grow(spos[0], spos[1], spos[2], sdiameter, Section_Type.DENDRITE)
                 stats.node_grow_stats[soma].append(snpos)
-                node.move_point(0, Vector3f(snpos[0], snpos[1], snpos[2]))
+                node.move_point(0, Vector3f(spos[0], spos[1], spos[2]))
                 nodes[npos] = node
 
             logging.debug('Root Node: %s', segm.start)
@@ -422,6 +427,7 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
     # NOTE: we offset the original graph to centre the soma at origin in BBPSDK morphology, but preserve
     # the original positions to make it easier to report original graph positions to user
     scentre, sradius = offsets
+    scale = options.k_SCALING_FACTOR
 
     logging.debug('Growing:%s', str(pnode_idx))
 
@@ -452,15 +458,18 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
             pos = pt.position()
             pos = vadjust_offset_length3(pos, scentre, 0)
 
+            spos = vmuls3(pos, scale)
+            sdiameter = pt.diameter * scale
+
             if section:
                 if (distance_squared(pos, prev_pos) >= options.k_SEGMENT_THRESHOLD_SQR):
-                    section.grow(pos[0], pos[1], pos[2], pt.diameter)
+                    section.grow(spos[0], spos[1], spos[2], sdiameter)
                     prev_pos = pos
                 else:
                     stats.warn_counts[stats.k_INFO_IGNORED_POSITIONS] += 1
                     logging.debug("INFO - ignoring pos: %s too close to previous: %s", pos, prev_pos)
             elif not options.k_CLIP_INSIDE_SOMA or vlength(pos) > sradius+pt.diameter:
-                section = node.grow(pos[0], pos[1], pos[2], pt.diameter, Section_Type.DENDRITE)
+                section = node.grow(spos[0], spos[1], spos[2], sdiameter, Section_Type.DENDRITE)
                 stats.node_grow_stats[node].append(pos)
                 prev_pos = pos
 
@@ -474,7 +483,9 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
 
         if npos not in nodes:
             if section:
-                nodes[npos] = section.grow(nposadj[0], nposadj[1], nposadj[2], ndata.diameter, Section_Type.DENDRITE)
+                spos = vmuls3(nposadj, scale)
+                sdiameter = ndata.diameter * scale
+                nodes[npos] = section.grow(spos[0], spos[1], spos[2], sdiameter, Section_Type.DENDRITE)
                 stats.node_grow_stats[section].append(nposadj)
                 logging.debug('New Node:%s', str(segm.end))
             else:
@@ -507,6 +518,9 @@ def create_morphology(skel, soma_data, options):
 
         # boolean set True to create normal BBPSDK soma node; False creates zero sized node for debugging
         k_INFLATE_SOMA = options.verbosity_level > logging.NOTSET                       # Default: True
+
+        # float specifies morphology scaling factor
+        k_SCALING_FACTOR = options.scaling_factor                                       # Default: 1
 
     class morph_statistics:
         k_WARN_UNCONNECTED_SEGMENTS = 1
@@ -605,6 +619,7 @@ if __name__ == '__main__':
 
         verbosity_level = logging.INFO
         threshold_segment_length = 0
+        scaling_factor = 1
         allow_cycles = False
         graph_depth = -1
 
@@ -644,7 +659,7 @@ if __name__ == '__main__':
     logging.basicConfig(format=k_FORMAT, level=options.verbosity_level)
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hfas:o:v:t:",["skeleton=","output_dir=","verbose=","threshold="])
+        opts, args = getopt.getopt(sys.argv[1:],"hfas:o:v:t:x:",["skeleton=","output_dir=","verbose=","threshold=","scale="])
     except getopt.GetoptError:
         print 'skeletonize.py -h'
         sys.exit(2)
@@ -654,13 +669,14 @@ if __name__ == '__main__':
                 print 'Skeletonize converts an Amiramesh skeleton graph, plus annotations, into a BBPSDK cell morphology.'
                 print '\nUsage:'
                 print ' skeletonize.py <skeleton>'
-                print ' skeletonize.py [-v <level>] [-a] [-t <threshold>] -s <skeleton> [-f] [-o <output_dir>]'
+                print ' skeletonize.py [-v <level>] [-a] [-t <threshold>] [-x <scale>] -s <skeleton> [-f] [-o <output_dir>]'
                 print '\t -a \t\t Allow cycles in skeleton graph (default False)'
                 print '\t -f \t\t Force overwrite of output files'
                 print '\t -o <dirname>\t Output directory'
                 print '\t -s <filename>\t Input skeleton filename'
                 print '\t -t <threshold>\t Set minimum segment arc length (default 0)'
                 print '\t -v <level>\t Set verbosity level: %i-%i' % (logging.NOTSET, logging.FATAL)
+                print '\t -x <scale>\t Set skeleton scaling factor to resize output skeleton'
                 print '\nExample:'
                 print '\t # creates /<path>/cell.Smt.SptGraph.h5 from /<path>/cell.Smt.SptGraph'
                 print '\t skeletonize.py -s cell.Smt.SptGraph'
@@ -668,6 +684,7 @@ if __name__ == '__main__':
                 print '\t For input source <filename>, expected input files are:'
                 print '\t\t <filename>.am # Amiramesh text file of skeleton graph'
                 print '\t\t <filename>.annotations.json # JSON file with {"soma": {"centre":{"x":x,"y":y,"z":z}, "radius":r}}'
+                print '\t\t\t Measurements such as "centre" and "radius" are in the coordinate system and units of the input source.'
                 print '\t Output file(s) are:'
                 print '\t\t <filename>.h5 # BBPSDK HDF5 format'
                 print '\t Verbosity levels(s) are:'
@@ -679,7 +696,8 @@ if __name__ == '__main__':
                 print '\t\t\t Coordinate axis: X, Y, Z are represented as three bars with end-fingers (0=X,1=Y,2=Z).'
                 print '\t\t All logging level includes additional visual debugging artifacts:'
                 print '\t\t\t Soma dendrites: visual representation of original source soma skeleton.'
-                print '\t Threshold currently specifies the minimum segment section length.'
+                print '\t Scale specifies the final scaling factor applied to the output files.'
+                print '\t Threshold specifies the minimum segment section length in original unscaled units.'
                 print '\t Display in rtneuron-app.py using: display_morphology_file(\'/<path>/<filename>.h5\')'
                 sys.exit()
             elif opt == '-a':
@@ -701,6 +719,9 @@ if __name__ == '__main__':
                 options.verbosity_level = int(arg)
                 logging.getLogger().setLevel(options.verbosity_level)
                 logging.info("Verbosity set to: %i", options.verbosity_level)
+            elif opt in ('-x', "--scale"):
+                options.scaling_factor = float(arg)
+                logging.info("Morphology scaling factor set to: %f", options.scaling_factor)
 
         if not opts:
             if len(sys.argv) != 2:
