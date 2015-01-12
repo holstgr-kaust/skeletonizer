@@ -373,7 +373,7 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
 
     # visual debug support
     if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
-        debug_soma(soma, sradius)
+        debug_soma(soma, sradius * scale)
 
     # initialize soma and nodes
     for snode_idx in somanodes:
