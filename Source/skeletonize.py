@@ -11,6 +11,7 @@ import getopt
 import copy
 import json
 import logging
+import operator
 from collections import defaultdict
 
 from bbp_import_module import *
@@ -60,6 +61,13 @@ def vadd3(v1, v2):
 def vsub3(v1, v2):
     return (v1[0]-v2[0], v1[1]-v2[1], v1[2]-v2[2])
 
+def vmin3(v1, v2):
+    return (min(v1[0],v2[0]), min(v1[1],v2[1]), min(v1[2],v2[2]))
+
+def vmax3(v1, v2):
+    return (max(v1[0],v2[0]), max(v1[1],v2[1]), max(v1[2],v2[2]))
+
+
 def vnormalize3(v):
     m = vlength(v)
     assert(m != 0)
@@ -69,6 +77,37 @@ def vnormalize_zero3(v):
     m = vlength(v)
     return vnormalize3(v) if m != 0 else v
 
+
+def v3_to_aabb(v1, v2):
+    """
+    Creates an AABB (Axis Aligned Bounding Box) from two maximally extreme points of the box.
+    :param v1: pos of first corner.
+    :param v2: pos of second corner, maximally distant to v1.
+    :return: pair of (min, max) vectors describing AABB.
+    """
+    return (vmin3(v1, v2), vmax3(v1, v2))
+
+def adjust_aabb(aabb, n):
+    """
+    Creates an adjusted AABB where each side is moved out from, or closer to, the centre.
+    :param aabb: The source AABB (Axis Aligned Bounding Box).
+    :param n: scaler of the amount to grow / reduce each side (positive values grow; negative values shrink AABB).
+    :return: Adjusted AABB.
+    """
+    return v3_to_aabb(vsubs3(aabb[0], n), vadds3(aabb[1], n))
+
+def inside_aabb(aabb, v):
+    """
+    Tests if a point is inside the AABB.
+    :param aabb: The AABB (Axis Aligned Bounding Box).
+    :param v: position vector.
+    :return: True if v is inside, False otherwise.
+    """
+    inside_min = all(map(lambda (aabbn, vn): aabbn < vn, zip(aabb[0], v)))
+    inside_max = all(map(lambda (aabbn, vn): aabbn > vn, zip(aabb[1], v)))
+    return inside_min and inside_max
+
+
 #@vlogger
 def vadjust_offset_length3(v, centre, min_length):
     """
@@ -77,6 +116,7 @@ def vadjust_offset_length3(v, centre, min_length):
     nv = vsub3(v, centre)
     m = vlength(nv)
     return nv if m > min_length else vmuls3(vnormalize_zero3(nv), min_length)
+
 
 def collect_soma_nodes(pos, radius, nodes):
     """
@@ -108,14 +148,37 @@ def collect_node_positions(nodes):
     """
     return [node.position() for nidx, node in nodes.iteritems()]
 
-def show_node_pos_stats(nodepositions):
+
+def is_cut_point(pos, aabb):
+    """
+    Test if a node (node_idx) is on the boundary of a cut edge (aabb).
+    :param pos: position vector.
+    :param aabb: The AABB (Axis Aligned Bounding Box) representing the cut boundary.
+    :return: True if node position represents a cut-point, or boundary node to missing data; False otherwise.
+    """
+    if not aabb:
+        return False
+
+    is_cut = not inside_aabb(aabb, pos)
+    return is_cut
+
+
+def show_node_pos_stats(nodepositions, aabb, centre):
     x = map(lambda a: a[0], nodepositions)
     y = map(lambda a: a[1], nodepositions)
     z = map(lambda a: a[2], nodepositions)
 
-    logging.info( "X max:%s min:%s avg:%s", max(x), min(x), sum(x)/float(len(x)))
-    logging.info( "Y max:%s min:%s avg:%s", max(y), min(y), sum(y)/float(len(y)))
-    logging.info( "Z max:%s min:%s avg:%s", max(z), min(z), sum(z)/float(len(z)))
+    logging.info( "X min:%s max:%s avg:%s", min(x), max(x), sum(x)/float(len(x)))
+    logging.info( "Y min:%s max:%s avg:%s", min(y), max(y), sum(y)/float(len(y)))
+    logging.info( "Z min:%s max:%s avg:%s", min(z), max(z), sum(z)/float(len(z)))
+
+    clipped_nodepositions = filter(lambda v: not inside_aabb(aabb, v), nodepositions)
+    logging.info( "Stack AABB clipped nodes:%s", len(clipped_nodepositions))
+
+    for np in clipped_nodepositions:
+        anp = vadjust_offset_length3(np, centre, 0)
+        logging.warning( "\t clipped node pos:%s, original source pos:%s", anp, np)
+
 
 def show_graph_stats(dag_nodes, node_segments):
     """
@@ -130,20 +193,20 @@ def show_graph_stats(dag_nodes, node_segments):
     len_necnts = len(necnts)
     len_ncnts = len(ncnts)
 
-    logging.info("DAG (%s) Edge count:%s max:%s min:%s avg:%s",
+    logging.info("DAG (%s) Edge count:%s min:%s max:%s avg:%s",
                  len_ecnts, sum(ecnts),
-                 max(ecnts) if len_ecnts > 0 else 'N/A',
                  min(ecnts) if len_ecnts > 0 else 'N/A',
+                 max(ecnts) if len_ecnts > 0 else 'N/A',
                  sum(ecnts)/float(len_ecnts) if len_ecnts > 0 else 'N/A')
-    logging.info("DAG Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s",
+    logging.info("DAG Node Segment (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s",
                  len_necnts, sum(necnts),
-                 max(necnts) if len_necnts > 0 else 'N/A',
                  min(necnts) if len_necnts > 0 else 'N/A',
+                 max(necnts) if len_necnts > 0 else 'N/A',
                  sum(necnts)/float(len_necnts) if len_necnts > 0 else 'N/A')
-    logging.info("Node Segment (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s",
+    logging.info("Node Segment (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s",
                  len_ncnts, sum(ncnts),
-                 max(ncnts) if len_ncnts > 0 else 'N/A',
                  min(ncnts) if len_ncnts > 0 else 'N/A',
+                 max(ncnts) if len_ncnts > 0 else 'N/A',
                  sum(ncnts)/float(len_ncnts) if len_ncnts > 0 else 'N/A')
 
     posdict = defaultdict(lambda : 0)
@@ -156,14 +219,15 @@ def show_graph_stats(dag_nodes, node_segments):
     dpcnts.reverse()
 
     if dpcnts:
-        logging.info("Unique Segment positions:%s Duplicate positions:%s Total non-unique positions:%s Duplicates per position max:%s min:%s avg:%s",
-                        len(posdict), len(dpcnts), sum(dpcnts), max(dpcnts), min(dpcnts), sum(dpcnts)/float(len(dpcnts)))
+        logging.info("Unique Segment positions:%s Duplicate positions:%s Total non-unique positions:%s Duplicates per position min:%s max:%s avg:%s",
+                        len(posdict), len(dpcnts), sum(dpcnts), min(dpcnts), max(dpcnts), sum(dpcnts)/float(len(dpcnts)))
         logging.info(" Max %s position duplicate counts:%s", csize, dpcnts[:csize])
     else:
         logging.info("No duplicate positions in node and segment graphs.")
 
 def show_grow_stats(stats, soma):
     """
+    :param stats: Statistics data to log.
     :param soma: BBPSDK Soma object
     """
 
@@ -176,26 +240,31 @@ def show_grow_stats(stats, soma):
 
     if gcnts:
         bcnts = [i for i in gcnts if i > 1]
-        logging.info("Grown Node (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(gcnts), sum(gcnts), max(gcnts), min(gcnts), sum(gcnts)/float(len(gcnts)))
+        logging.info("Grown Node (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s", len(gcnts), sum(gcnts), min(gcnts), max(gcnts), sum(gcnts)/float(len(gcnts)))
         if soma in node_grow_stats:
             logging.info(" Soma grown node counts:%s", len(node_grow_stats[soma]))
         else:
             logging.info("WARNING - No nodes grown from Soma")
 
-        logging.info(" Max %i counts:%s", csize, gcnts[:csize])
         logging.info(" Min %i counts:%s", csize, gcnts[-csize:])
+        logging.info(" Max %i counts:%s", csize, gcnts[:csize])
 
-        logging.info("Grown Branching Node (%s) Edge count:%s Edge(s) max:%s min:%s avg:%s", len(bcnts), sum(bcnts), max(bcnts), min(bcnts), sum(bcnts)/float(len(bcnts)))
-        logging.info(" Max %i counts:%s", csize, bcnts[:csize])
+        logging.info("Grown Branching Node (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s", len(bcnts), sum(bcnts), min(bcnts), max(bcnts), sum(bcnts)/float(len(bcnts)))
         logging.info(" Min %i counts:%s", csize, bcnts[-csize:])
+        logging.info(" Max %i counts:%s", csize, bcnts[:csize])
     else:
         logging.warning("No Grown Nodes")
 
 def show_warning_stats(stats):
+    """
+    Log warning statistics data.
+    :param stats: Statistics data to log.
+    """
     warnings = False
     WARN_UNCONNECTED_SEGMENTS_cnt = stats.warn_counts[stats.k_WARN_UNCONNECTED_SEGMENTS]
     WARN_IGNORED_EDGES_cnt = stats.warn_counts[stats.k_WARN_IGNORED_EDGES]
     WARN_MAX_GROW_DEPTH_REACHED_cnt = stats.warn_counts[stats.k_WARN_MAX_GROW_DEPTH_REACHED]
+    WARN_CUT_NOTES_FOUND_cnt = stats.warn_counts[stats.k_WARN_CUT_NODES_FOUND]
     INFO_IGNORED_POSITIONS_cnt = stats.warn_counts[stats.k_INFO_IGNORED_POSITIONS]
 
     if WARN_UNCONNECTED_SEGMENTS_cnt > 0:
@@ -210,11 +279,15 @@ def show_warning_stats(stats):
         warnings = True
         logging.warning("WARNING - Reached maximum grow depth %s times", WARN_MAX_GROW_DEPTH_REACHED_cnt)
 
+    if WARN_CUT_NOTES_FOUND_cnt > 0:
+        warnings = True
+        logging.warning("WARNING - Found %s cut nodes", WARN_CUT_NOTES_FOUND_cnt)
+
     if INFO_IGNORED_POSITIONS_cnt > 0:
         warnings = True
         logging.info("INFO - %s Ignored Segments Positions (thresholded)", INFO_IGNORED_POSITIONS_cnt)
 
-    if warnings:
+    if warnings and logging.getLogger().getEffectiveLevel() > logging.DEBUG:
         logging.warning("NOTE: To view warning and info details, enable DEBUG verbosity: -v 10")
 
 
@@ -244,6 +317,16 @@ def debug_soma(soma, radius):
         n = soma.grow(i,j,0, 0.1, Section_Type.DENDRITE)
         n = soma.grow(i,0,j, 0.1, Section_Type.DENDRITE)
         n = soma.grow(0,i,j, 0.1, Section_Type.DENDRITE)
+
+def debug_scale_cut_point_diameter(scaled_diameter, scale):
+    """
+    Returns a new scaled diameter for visual debugging of cut-point nodes.
+    :param scaled_diameter: The current, scaled node diameter
+    :param scale: The scaling factor
+    :return: New diameter for cut node
+    """
+    return max(2 * scale, scaled_diameter * 5)
+
 
 
 def create_node_graph(skel):
@@ -352,7 +435,6 @@ def validate_graph_segments(dgraph, nodesegments, somanodes = None):
             assert(cidx in dgraph)
 
 
-
 def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
     """
     Grows the soma nodes.
@@ -402,8 +484,13 @@ def grow_soma(soma, somanodes, nodesegments, nodes, offsets, options, stats):
 
             logging.debug('Root Node: %s', segm.start)
 
+    # debug support
+    logging.info("Soma created: radius (mean, max): (%s, %s)",
+                    soma.mean_radius(), soma.max_radius())
 
-def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, options, stats, depth = -1):
+
+def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited,
+                  morphology, offsets, options, stats, depth = -1):
     """
     Grows the node to node segments.
     :param pnode_idx: node-id of parent node.
@@ -411,6 +498,7 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
     :param nodesegments: dictionary mapping start node-ids to the segments which grow from them.
     :param nodes: dictionary mapping node positions to BBPSDK section.
     :param visited: node-ids of already visited nodes.
+    :param morphology: BBPSDK Morphology object.
     :param offsets: tuple of (soma_centre, soma_radius).
     :param options: struct of growth options.
     :param stats: statistic collection object
@@ -433,6 +521,8 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
 
     visited.append(pnode_idx)
 
+    is_parent_cut = False
+
     # grow sections for parent node
     segments = nodesegments[pnode_idx]
     for segm in segments:
@@ -451,19 +541,36 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
         assert(npos in nodes), 'Missing start node - id: %i, npos: %s' % (segm.start, npos)
         node = nodes[npos]
 
+        is_parent_cut = is_parent_cut or is_cut_point(npos, options.k_CUTPOINT_AABB)
+        if is_parent_cut:
+            logging.debug('Cut node reached at node:%s position:%s', str(segm.start), npos)
+            break
+
+        is_cut = is_parent_cut
+
         # grow initial sections; first and last points belong to the start and end nodes
         # growth begins when segment exits soma
         section = None
         for pt in segm.points[1:-1]:
-            pos = pt.position()
-            pos = vadjust_offset_length3(pos, scentre, 0)
+            pos_orig = pt.position()
+            pos = vadjust_offset_length3(pos_orig, scentre, 0)
 
             spos = vmuls3(pos, scale)
             sdiameter = pt.diameter * scale
 
+            is_cut = is_cut or is_cut_point(pos_orig, options.k_CUTPOINT_AABB)
+
+            # visual debug support
+            if is_cut and logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                sdiameter = debug_scale_cut_point_diameter(sdiameter, scale)
+
             if section:
                 if (distance_squared(pos, prev_pos) >= options.k_SEGMENT_THRESHOLD_SQR):
                     section.grow(spos[0], spos[1], spos[2], sdiameter)
+
+                    if is_cut:
+                        morphology.mark_cut_point(section)
+
                     prev_pos = pos
                 else:
                     stats.warn_counts[stats.k_INFO_IGNORED_POSITIONS] += 1
@@ -473,10 +580,21 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
                 stats.node_grow_stats[node].append(pos)
                 prev_pos = pos
 
+            if is_cut:
+                stats.warn_counts[stats.k_WARN_CUT_NODES_FOUND] += 1
+                logging.debug('Cut node reached at node segment position:%s', pos_orig)
+                break
+
         # end node
         ndata = segm.points[-1]
         npos = ndata.position()
         nposadj = vadjust_offset_length3(npos, scentre, max(0, sradius-ndata.diameter))
+
+        is_cut = is_cut or is_cut_point(npos, options.k_CUTPOINT_AABB)
+
+        if is_cut:
+            stats.warn_counts[stats.k_WARN_CUT_NODES_FOUND] += 1
+            logging.debug('Ending cut node reached at node position:%s', npos)
 
         if not section and (not options.k_CLIP_INSIDE_SOMA or vlength(nposadj) >= sradius + ndata.diameter):
             section = node
@@ -485,16 +603,29 @@ def grow_segments(pnode_idx, dagnodes, nodesegments, nodes, visited, offsets, op
             if section:
                 spos = vmuls3(nposadj, scale)
                 sdiameter = ndata.diameter * scale
+
+                # visual debug support
+                if is_cut and logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                    sdiameter = debug_scale_cut_point_diameter(sdiameter, scale)
+
                 nodes[npos] = section.grow(spos[0], spos[1], spos[2], sdiameter, Section_Type.DENDRITE)
+
+                if is_cut:
+                    morphology.mark_cut_point(nodes[npos])
+
                 stats.node_grow_stats[section].append(nposadj)
                 logging.debug('New Node:%s', str(segm.end))
             else:
                 nodes[npos] = node
                 logging.debug('Reusing Start Node:%s as End Node:%s', str(segm.start), str(segm.end))
 
+    if is_parent_cut:
+        return
+
     # grow children
     for cn_idx in dagnodes[pnode_idx]:
-        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, offsets, options, stats, depth - 1 if depth > 0 else -1)
+        grow_segments(cn_idx, dagnodes, nodesegments, nodes, visited, morphology,
+                      offsets, options, stats, depth - 1 if depth > 0 else -1)
 
 
 def create_morphology(skel, soma_data, options):
@@ -522,13 +653,17 @@ def create_morphology(skel, soma_data, options):
         # float specifies morphology scaling factor
         k_SCALING_FACTOR = options.scaling_factor                                       # Default: 1
 
+        k_CUTPOINT_AABB = options.stack_AABB                                            # Default: None
+
+
     class morph_statistics:
         k_WARN_UNCONNECTED_SEGMENTS = 1
         k_WARN_IGNORED_EDGES = 2
         k_WARN_MAX_GROW_DEPTH_REACHED = 3
+        k_WARN_CUT_NODES_FOUND = 4
         k_INFO_IGNORED_POSITIONS = 100
 
-        # dictionary mapping warning and info categories above to occurance counts
+        # dictionary mapping warning and info categories above to occurrence counts
         warn_counts = defaultdict(lambda: 0)
 
         # dictionary mapping BBPSDK nodes to the positions grown from them.
@@ -545,20 +680,23 @@ def create_morphology(skel, soma_data, options):
 
     npositions = collect_node_positions(skel.nodes)
 
-    show_node_pos_stats(npositions)
+    show_node_pos_stats(npositions, options.stack_AABB, soma_centre)
     logging.info('Collected %s soma nodes out of %s total nodes',  str(len(soma_node_idxs)), str(len(skel.nodes)))
 
     # Create graph / data-structures of skeleton
     # NOTE: creating the directed graph also re-orders the segment directions (required to grow correctly)
     node_idx_graph = create_node_graph(skel)
-    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph, morph_options, morph_statistics)
-    node_segments = create_node_segments_dict(skel.segments, dag_nodes, morph_statistics)
+    dag_nodes = create_directed_graph(soma_node_idxs, node_idx_graph,
+                                      morph_options, morph_statistics)
+    node_segments = create_node_segments_dict(skel.segments, dag_nodes,
+                                              morph_statistics)
 
     show_graph_stats(dag_nodes, node_segments)
 
     # TODO: add better tools for analysing the connectivity of unreachable nodes
     # some nodes are unreachable islands in the graph (no path from the soma); we validate and warn
-    validate_graph_segments(dag_nodes, node_segments, soma_node_idxs if morph_options.k_CONNECT_SOMA_SOMA else None)
+    validate_graph_segments(dag_nodes, node_segments,
+                            soma_node_idxs if morph_options.k_CONNECT_SOMA_SOMA else None)
 
     # Grow nodes
     morphology = Morphology()
@@ -566,13 +704,18 @@ def create_morphology(skel, soma_data, options):
     nodes = {}
 
     # Grow soma nodes
-    grow_soma(soma, soma_node_idxs, node_segments, nodes, (soma_centre, soma_radius), morph_options, morph_statistics)
+    grow_soma(soma, soma_node_idxs,
+              node_segments, nodes,
+              (soma_centre, soma_radius),
+              morph_options, morph_statistics)
 
     # Grow segments from inside (soma nodes) out
     visited = []
     for snidx in soma_node_idxs:
         logging.debug('Growing Soma Node:%s', str(snidx))
-        grow_segments(snidx, dag_nodes, node_segments, nodes, visited, (soma_centre, soma_radius), morph_options, morph_statistics, depth)
+        grow_segments(snidx, dag_nodes, node_segments, nodes, visited,
+                      morphology, (soma_centre, soma_radius),
+                      morph_options, morph_statistics, depth)
 
     show_grow_stats(morph_statistics, soma)
     show_warning_stats(morph_statistics)
@@ -618,10 +761,14 @@ if __name__ == '__main__':
         skel_out_file = None
 
         verbosity_level = logging.INFO
+        force_segment_threshold = False
         threshold_segment_length = 0
         scaling_factor = 1
         allow_cycles = False
         graph_depth = -1
+
+        stack_AABB = None
+
 
         @staticmethod
         def set_pathname(arg):
@@ -639,6 +786,37 @@ if __name__ == '__main__':
             options.skel_am_file = os.path.join(options.skel_path, options.skel_name + '.am')
             options.skel_json_file = os.path.join(options.skel_path, options.skel_name + '.annotations.json')
             options.skel_out_file = os.path.join(options.skel_out_path, options.skel_name + '.h5')
+
+        @staticmethod
+        def set_annotation_data(data):
+            if 'skeletonize' in data:
+                skeletonize_config = data['skeletonize']
+                assert (type(skeletonize_config) == dict), \
+                        "Expected skeletonize section dictionary object"
+                if 'threshold_segment_length' in skeletonize_config and not options.force_segment_threshold:
+                    options.threshold_segment_length = float(skeletonize_config['threshold_segment_length'])
+                    logging.info("Segment length threshold set to: %f", options.threshold_segment_length)
+
+            if 'stack' in data:
+                stack_metadata = data['stack']
+                assert (type(stack_metadata) == dict), \
+                        "Expected stack section dictionary object"
+                if 'AABB' in stack_metadata:
+                    # TODO: fix constant
+                    adjust_amt = -1.0
+                    v1_x = stack_metadata['AABB']['v1']['x']
+                    v1_y = stack_metadata['AABB']['v1']['y']
+                    v1_z = stack_metadata['AABB']['v1']['z']
+                    v2_x = stack_metadata['AABB']['v2']['x']
+                    v2_y = stack_metadata['AABB']['v2']['y']
+                    v2_z = stack_metadata['AABB']['v2']['z']
+
+                    options.stack_AABB = adjust_aabb(
+                        v3_to_aabb((v1_x, v1_y, v1_z), (v2_x, v2_y, v2_z)),
+                        adjust_amt)
+
+                    logging.info("Found stack AABB: %f",
+                                 options.threshold_segment_length)
 
         @staticmethod
         def validate():
@@ -699,6 +877,7 @@ if __name__ == '__main__':
                 print '\t Scale specifies the final scaling factor applied to the output files.'
                 print '\t Threshold specifies the minimum segment section length in original unscaled units.'
                 print '\t Display in rtneuron-app.py using: display_morphology_file(\'/<path>/<filename>.h5\')'
+                print '\t\t NOTE: \'display_morphology_file\' may require a relative or absolute path, not just a filename, to display morphology.'
                 sys.exit()
             elif opt == '-a':
                 options.allow_cycles = True
@@ -713,6 +892,7 @@ if __name__ == '__main__':
             elif opt in ("-s", "--skeleton"):
                 options.set_pathname(arg)
             elif opt in ('-t', "--threshold"):
+                options.force_segment_threshold = True
                 options.threshold_segment_length = float(arg)
                 logging.info("Segment length threshold set to: %f", options.threshold_segment_length)
             elif opt in ('-v', "--verbose"):
@@ -747,6 +927,8 @@ if __name__ == '__main__':
         with open(options.skel_json_file, 'r') as f:
             data = json.load(f)
 
+        options.set_annotation_data(data)
+
         morphology = create_morphology(skel, data['soma'], options)
 
         create_morphology_file(morphology, options)
@@ -757,6 +939,7 @@ if __name__ == '__main__':
         logging.shutdown()
 
     """
+    # NOTE: display_morphology_file requires a path, not just a filename.
     rtneuron-app.py
     display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.juan.h5')
     display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.h5')
