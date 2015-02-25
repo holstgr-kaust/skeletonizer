@@ -1,7 +1,13 @@
 """
-This Blender script that generates cross-sectional data from a skeletonization representation in an Amiramesh text file.
+This Blender script that generates cross-sectional data from a skeletonization
+representation in an Amiramesh text file, and a Blender project containing the
+mesh for the corresponding skeletonized object.
 
-NOTES:  Blender doesn't release deleted meshes, so it is better not to chunk multiple nodes (memory usage drastically grows)
+NOTES:  It is important that the Blender project file *.blend contains the named object; also,
+            The object must be in the correct position (typically this is the object whose
+            mesh was used to create the skeletonization).
+        The coordinate systems differ between Blender and Avizo (the script accounts for this).
+        Blender doesn't release deleted meshes, so it is better not to chunk multiple nodes (memory usage drastically grows)
         Blender will fail if it doesn't get all the cores it expects, use -t 1, and don't run more copies of Blender than real cores.
         For now, run a one node test run on the cell to get the total number of nodes (part of the output file name).
             If there are N nodes, then use `echo $(seq 0 1 $(( N-1 )))` to iterate over the node chunks.
@@ -9,6 +15,12 @@ NOTES:  Blender doesn't release deleted meshes, so it is better not to chunk mul
             The file is name after the chunk of segment cross-sectional data it contains
             Combine these files together after running all the scripts.
         Below are recipes for running this script as a single invocation, and in parallel.
+        There are also some testing functions that can be run interactively (below), to verify that the script is working
+            I.e., The cross sectional cuts have the correct cutting planes and cross-sectional faces.
+            See these functions for more documentation.
+        For interactive development from the Blender Python Console, enable reloading of the skeleton_annotate module as follows:
+            import imp
+            imp.reload(skeleton_annotate)
 
 # single invocation of script
 blender -t 1 -b <path>/<filename>.blend -P <path>/skeleton_annotate.py -- "<object_name>" /<path>/<skeleton_filename>.am <start_node_idx> <number_of_nodes>
@@ -286,6 +298,25 @@ def debug_cut_faces(obj_name, skeleton, segment_range):
 
 
 def test_cut_planes(segment_range = (0,1000)):
+    '''
+    A test function to show all the cutting planes used to create the cross-sections.
+    After running this function the scene will contain 'Plane*' objects centered on
+    skeleton nodes and oriented as normal cuts.  Visually verify the location and orientation.
+
+    To run interactively, start blender with the project:
+        blender <project_file>.blend
+    Open the Python console and type:
+        import sys, os
+        sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
+        import skeleton_annotate
+    Run with:
+        skeleton_annotate.test_cut_planes()
+
+    NOTE: Currently hardcoded to 'Astrocyte 2' in KB-E0010.blend stack
+    :param segment_range: A (start, end) tuple specifying which segment nodes to process.
+                          A range of (n,n+1) will create cut planes for all the points in the segment,
+                          otherwise the cuts are created for each start segment node.
+    '''
 
     dpath = '/var/remote/projects/epfl/data/KB-E0010/astrocyte2'
     skel_am_file = dpath + '/GeometrySurface.Smt.SptGraph_OK.am'
@@ -301,6 +332,27 @@ def test_cut_planes(segment_range = (0,1000)):
     debug_cut_planes(obj_name, skeleton, segment_range)
 
 def test_cut_faces(segment_range = (0,10)):
+    '''
+    A test function to show all the cutting planes and faces used to create the cross-sections.
+    After running this function the scene will contain 'Testplane*' and 'Testslice*' objects centered on
+    skeleton nodes and oriented as normal cuts and faces.
+    Visually verify the location, orientation, and correctness of the selected face.
+    'Testplane###' and 'Testslice###' should pair for given '###'.
+
+    To run interactively, start blender with the project:
+        blender <project_file>.blend
+    Open the Python console and type:
+        import sys, os
+        sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
+        import skeleton_annotate
+    Run with:
+        skeleton_annotate.test_cut_faces()
+
+    NOTE: Currently hardcoded to 'Astrocyte 2' in KB-E0010.blend stack
+    :param segment_range: A (start, end) tuple specifying which segment nodes to process
+                          A range of (n,n+1) will create cut faces for all the points in the segment,
+                          otherwise the cuts are created for each start segment node.
+    '''
 
     dpath = '/var/remote/projects/epfl/data/KB-E0010/astrocyte2'
     skel_am_file = dpath + '/GeometrySurface.Smt.SptGraph_OK.am'
@@ -327,12 +379,11 @@ def test1():
 
 
 def test2():
-    # import sys, os
-    # sys.path.append(os.path.abspath('/home/holstgr/Development/Skeletonizer/Source'))
+    # import os, sys, imp, bmesh, functools
+    # sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
     # import skeleton_annotate
-    # import imp
-    # imp.reload(skeleton_annotate)
     # skeleton_annotate.test2()
+    # imp.reload(skeleton_annotate) # to reload changes
     dpath = '/var/remote/projects/epfl/data/KB-E0010/astrocyte2'
     am_path = dpath + '/GeometrySurface.Smt.SptGraph_OK.am'
     annotate_path = dpath+'/GeometrySurface.Smt.SptGraph_OK.annotations.json'
@@ -342,8 +393,7 @@ def test2():
 
 
 def main():
-    # blender -b /var/remote/projects/epfl/data/KB-E0010/KB-E0010.blend -P ~/Development/Skeletonizer/Source/skeleton_annotate.py -- $CELLNAME $AMPATH $START_SEG $SEG_SIZE
-    # blender -b /var/remote/projects/epfl/data/KB-E0010/KB-E0010.blend -P ~/Development/Skeletonizer/Source/skeleton_annotate.py -- 'Astrocyte 2' /var/remote/projects/epfl/data/KB-E0010/astrocyte2/GeometrySurface.Smt.SptGraph_OK.am 0 1
+    # blender -t 1 -b /var/remote/projects/epfl/data/KB-E0010/KB-E0010.blend -P skeleton_annotate.py -- "$CELLNAME" $AMPATH $START_SEG $SEG_SIZE
 
     argv = sys.argv[sys.argv.index("--") + 1:]
 
