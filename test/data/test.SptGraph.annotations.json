@@ -1,0 +1,6 @@
+{
+  "soma" : {"centre":{"x":0,"y":0,"z":0},"radius":1.1},
+  "skeletonize": {"threshold_segment_length":0.1},
+  "stack": {"AABB":{"v1":{"x":-10,"y":-10,"z":-10}, "v2":{"x":10,"y":10,"z":10}}}
+}
+
