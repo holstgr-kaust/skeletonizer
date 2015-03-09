@@ -6,6 +6,9 @@
 """
 """
     Skeletonizer testing module 
+
+    To run tests:
+    python -m unittest test.test_skeletonizer
 """
 
 import unittest
@@ -32,15 +35,16 @@ from skeletonizer.graphs import *
 from skeletonizer.morphology import *
 
 
-class MorphologyTestCase(unittest.TestCase):
+class MorphologyFileTestCase(unittest.TestCase):
     options = MorphologyCreateOptions()
     test_dir_path = os.path.abspath(os.path.split(__file__)[0])
-    data_dir_path = os.path.join(options.skel_path,'data')
-    source_path = os.path.join(data_dir_path, 'test.SptGraph')
+    data_dir_path = os.path.join(test_dir_path,'data')
 
     def setUp(self):
         k_FORMAT = "%(message)s" # "%(asctime)-15s %(message)s"
-        logging.basicConfig(format=k_FORMAT, level=options.verbosity_level)
+        logging.basicConfig(format=k_FORMAT, level=self.options.verbosity_level)
+
+        source_path = os.path.join(self.data_dir_path, 'test.SptGraph')
 
         self.options.set_pathname(source_path)
         self.options.skel_out_path = self.test_dir_path
@@ -51,11 +55,6 @@ class MorphologyTestCase(unittest.TestCase):
         logging.shutdown()
 
     def test_create_mophology_file(self):
-        output_file = 'test.SptGraph.h5'
-
-        print("options: %s " % (self.options.skel_path,self.options.skel_name,self.options.skel_out_path,
-                                self.options.skel_am_file,self.options.skel_json_file,self.options.skel_out_file))
-        '''
         try:
             os.remove(self.options.skel_out_file)
         except OSError:
@@ -68,25 +67,28 @@ class MorphologyTestCase(unittest.TestCase):
 
         reader = AmirameshReader()
 
-        with open(options.skel_am_file, 'r') as f:
+        with open(self.options.skel_am_file, 'r') as f:
             skel = reader.parse(f)
 
-        with open(options.skel_json_file, 'r') as f:
+        with open(self.options.skel_json_file, 'r') as f:
             data = json.load(f)
 
         self.options.set_annotation_data(data)
 
         morphology = create_morphology(skel, data['soma'], self.options)
 
-        create_morphology_file(morphology, options)
-        '''
+        create_morphology_file(morphology, self.options)
+
         self.assertEqual(os.path.exists(self.options.skel_out_file), True, 
                         ('expecting %s output file' % self.options.skel_out_file))
 
 
-    """
-    # NOTE: display_morphology_file requires a path, not just a filename.
-    rtneuron-app.py
-    display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.juan.h5')
-    display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.h5')
-    """
+        """
+        # NOTE: display_morphology_file requires a path, not just a filename.
+        rtneuron-app.py
+        display_morphology_file('./test/test.SptGraph.h5')
+        """
+
+suite = unittest.TestLoader().loadTestsFromTestCase(MorphologyFileTestCase)
+unittest.TextTestRunner(verbosity=2).run(suite)
+

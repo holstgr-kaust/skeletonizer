@@ -143,6 +143,5 @@ if __name__ == '__main__':
     """
     # NOTE: display_morphology_file requires a path, not just a filename.
     rtneuron-app.py
-    display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.juan.h5')
-    display_morphology_file('/home/holstgr/Development/Skeletonizer/oligodandrocyte/GeometrySurface.Smt.SptGraph.am.h5')
+    display_morphology_file('./GeometrySurface.Smt.SptGraph.h5')
     """
