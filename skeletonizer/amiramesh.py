@@ -1,5 +1,14 @@
-import re
+"""
+    Skeletonizer: Python Cell Morphology Analysis and Construction Toolkit
 
+    KAUST, BESE, Neuro-Inspired Computing Project
+    (c) 2014-2015. All rights reserved.
+"""
+"""
+    Amiramesh module.
+"""
+
+import re
 
 #
 # Node class

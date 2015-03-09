@@ -1,2 +1,6 @@
 *.pyc
 .idea/
+local.auto.eqc
+/dist/
+/*.egg-info
+

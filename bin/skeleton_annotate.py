@@ -1,4 +1,10 @@
 """
+    Skeletonizer: Python Cell Morphology Analysis and Construction Toolkit
+
+    KAUST, BESE, Neuro-Inspired Computing Project
+    © 2014-2015. All rights reserved.
+"""
+"""
 This Blender script that generates cross-sectional data from a skeletonization
 representation in an Amiramesh text file, and a Blender project containing the
 mesh for the corresponding skeletonized object.
@@ -50,10 +56,12 @@ from bpy.props import *
 import mathutils
 import addon_utils
 
-# TODO: fix hack for importing local utility modules
-sys.path.append(os.path.abspath(os.path.split(__file__)[0]))
+try:
+    import skeletonizer
+except ImportError:
+    sys.path.append(os.path.abspath(os.path.split(__file__)[0]))
 
-from amiramesh import *
+from skeletonizer.amiramesh import *
 
 # TODO: Check for available object_cross_section addon
 '''
@@ -66,6 +74,7 @@ if 'object_cross_section' not in bpy.context.user_preferences.addons.keys():
 
 #from object_cross_section import *
 '''
+
 
 def get_paths(arg):
     skel_path = os.path.abspath(os.path.dirname(arg))
