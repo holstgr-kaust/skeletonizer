@@ -22,6 +22,7 @@ import json
 import logging
 import operator
 from collections import defaultdict
+import subprocess
 
 try:
     import skeletonizer
@@ -36,58 +37,117 @@ from skeletonizer.morphology import *
 
 
 class MorphologyFileTestCase(unittest.TestCase):
-    options = MorphologyCreateOptions()
     test_dir_path = os.path.abspath(os.path.split(__file__)[0])
-    data_dir_path = os.path.join(test_dir_path,'data')
+    data_dir_path = os.path.join(test_dir_path, 'data')
+    bin_dir_path = os.path.join(os.path.abspath(os.path.dirname(test_dir_path)), 'bin')
 
     def setUp(self):
         k_FORMAT = "%(message)s" # "%(asctime)-15s %(message)s"
-        logging.basicConfig(format=k_FORMAT, level=self.options.verbosity_level)
-
-        source_path = os.path.join(self.data_dir_path, 'test.SptGraph')
-
-        self.options.set_pathname(source_path)
-        self.options.skel_out_path = self.test_dir_path
-        self.options.scaling_factor = 20.0
-        self.options.set_filepaths()
+        logging.basicConfig(format=k_FORMAT, level=logging.WARNING)
 
     def tearDown(self):
         logging.shutdown()
 
     def test_create_mophology_file(self):
+        source_path = os.path.join(self.data_dir_path, 'test.SptGraph')
+
+        options = MorphologyCreateOptions()
+        options.set_pathname(source_path)
+        options.skel_out_path = self.test_dir_path
+        options.scaling_factor = 20.0
+        options.set_filepaths()
+
         try:
-            os.remove(self.options.skel_out_file)
+            os.remove(options.skel_out_file)
         except OSError:
             pass
 
-        self.assertEqual(os.path.exists(self.options.skel_out_file), False, 
-                        ('expected no %s file' % self.options.skel_out_file))
+        self.assertEqual(os.path.exists(options.skel_out_file), False, 
+                        ('expected no %s file' % options.skel_out_file))
 
-        self.options.validate()
+        options.validate()
 
         reader = AmirameshReader()
 
-        with open(self.options.skel_am_file, 'r') as f:
+        with open(options.skel_am_file, 'r') as f:
             skel = reader.parse(f)
 
-        with open(self.options.skel_json_file, 'r') as f:
+        with open(options.skel_json_file, 'r') as f:
             data = json.load(f)
 
-        self.options.set_annotation_data(data)
+        options.set_annotation_data(data)
 
-        morphology = create_morphology(skel, data['soma'], self.options)
+        morphology = create_morphology(skel, data['soma'], options)
 
-        create_morphology_file(morphology, self.options)
+        create_morphology_file(morphology, options)
 
-        self.assertEqual(os.path.exists(self.options.skel_out_file), True, 
-                        ('expecting %s output file' % self.options.skel_out_file))
+        self.assertEqual(os.path.exists(options.skel_out_file), True, 
+                        ('expecting %s output file' % options.skel_out_file))
 
+        # Open created morphology file in RTNeuron to view
+        # rtneuron-app.py doesn't support this yet
+        with open(os.devnull, 'w') as nof:
+            if not subprocess.call(['which','rtneuron-app.py'], stdout=nof, stderr=nof):
+                #subprocess.call(['rtneuron-app.py', '--script', 'display_morphology_file(%s)' % options.skel_out_file]) 
+                pass
 
-        """
-        # NOTE: display_morphology_file requires a path, not just a filename.
-        rtneuron-app.py
-        display_morphology_file('./test/test.SptGraph.h5')
-        """
+    def test_create_crosssection_file(self):
+        source_path = os.path.join(self.data_dir_path, 'test.SptGraph')
+        blend_file = os.path.join(self.data_dir_path, 'test.blend')
+        script_file = os.path.join(self.bin_dir_path, 'skeleton_annotate_csv.py')
+
+        self.assertEqual(os.path.exists(script_file), True, 
+                        ('expecting %s script file' % script_file))
+        self.assertEqual(os.path.exists(blend_file), True, 
+                        ('expecting %s input file' % blend_file))
+
+        options = MorphologyCreateOptions()
+        options.set_pathname(source_path)
+        options.skel_out_path = self.test_dir_path
+        options.force_overwrite = True # we're not writing the *.h5 morphology file, so ignore when validating
+        options.set_filepaths()
+
+        options.validate()
+
+        reader = AmirameshReader()
+
+        with open(options.skel_am_file, 'r') as f:
+            skel = reader.parse(f)
+
+        with open(options.skel_json_file, 'r') as f:
+            data = json.load(f)
+
+        options.set_annotation_data(data)
+
+        r = (0, len(skel.segments))
+
+        # TODO: fix ugly duplicate name hack -- we should specify the name of the output file
+        obj_name = 'shape'
+        csvfilename = obj_name+'-cross_section_data-range-'+str(r[0])+'-'+str(r[1]-1)+'-of-'+str(len(skel.segments))
+        csv_out_file = os.path.join(self.data_dir_path, csvfilename + '.csv')
+        
+        try:
+            os.remove(csv_out_file)
+        except OSError:
+            pass
+
+        self.assertEqual(os.path.exists(csv_out_file), False, 
+                        ('expected no %s file' % csv_out_file))
+
+        # invoke blender with script
+        #
+
+        with open(os.devnull, 'w') as nof:
+            self.assertEqual(subprocess.call(['which','blender'], stdout=nof, stderr=nof), 0, 
+                        'expected to find blender executable file')
+
+        subprocess.call(['blender', '-b', blend_file, '-P', script_file, '--', obj_name, options.skel_am_file, str(r[0]), str(r[1])]) 
+
+        self.assertEqual(os.path.exists(csv_out_file), True, 
+                        ('expecting %s output file' % csv_out_file))
+
+        # TODO: Scan stdout from subprocess.call to find errors or issues (e.g., "No cross-section data for node:")
+
 
 suite = unittest.TestLoader().loadTestsFromTestCase(MorphologyFileTestCase)
 unittest.TextTestRunner(verbosity=2).run(suite)

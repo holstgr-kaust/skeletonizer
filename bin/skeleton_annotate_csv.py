@@ -24,15 +24,15 @@ NOTES:  It is important that the Blender project file *.blend contains the named
         There are also some testing functions that can be run interactively (below), to verify that the script is working
             I.e., The cross sectional cuts have the correct cutting planes and cross-sectional faces.
             See these functions for more documentation.
-        For interactive development from the Blender Python Console, enable reloading of the skeleton_annotate module as follows:
+        For interactive development from the Blender Python Console, enable reloading of the skeleton_annotate_csv module as follows:
             import imp
-            imp.reload(skeleton_annotate)
+            imp.reload(skeleton_annotate_csv)
 
 # single invocation of script
-blender -t 1 -b <path>/<filename>.blend -P <path>/skeleton_annotate.py -- "<object_name>" /<path>/<skeleton_filename>.am <start_node_idx> <number_of_nodes>
+blender -t 1 -b <path>/<filename>.blend -P <path>/skeleton_annotate_csv.py -- "<object_name>" /<path>/<skeleton_filename>.am <start_node_idx> <number_of_nodes>
 
 # parallel invocation of script
-echo $(seq 0 1 $(( <total_node_count> - 1)) ) | xargs -d " " -n 1 -P <num_cores> -I{} sh -c 'blender -t 1 -b <path>/<filename>.blend -P <path>/skeleton_annotate.py -- "<object_name>" /<path>/<skeleton_filename>.am $(( {} )) 1'
+echo $(seq 0 1 $(( <total_node_count> - 1)) ) | xargs -d " " -n 1 -P <num_cores> -I{} sh -c 'blender -t 1 -b <path>/<filename>.blend -P <path>/skeleton_annotate_csv.py -- "<object_name>" /<path>/<skeleton_filename>.am $(( {} )) 1'
 
 # combine *.csv data files into a single file (file is named *.dat so it isn't re-read recursively; rename to *.csv file afterwards)
 head -n +1 "`ls *.csv | head -1`" > cross_section.csv.dat
@@ -59,7 +59,7 @@ import addon_utils
 try:
     import skeletonizer
 except ImportError:
-    sys.path.append(os.path.abspath(os.path.split(__file__)[0]))
+    sys.path.append(os.path.abspath(os.path.dirname(os.path.abspath(os.path.split(__file__)[0]))))
 
 from skeletonizer.amiramesh import *
 
@@ -115,7 +115,7 @@ def generate_node_cross_section_data(obj_name, npos, nnorm):
     :param obj_name: Object name (string)
     :param npos: Node position vector (Vector), Blender coordinates
     :param nnorm: Node normal vector (Vector), Blender coordinates
-    :return: Cross-sectional data tuple
+    :return: Cross-sectional data tuple, or None if no cross-section was found
     '''
     plane_ob_name = 'Plane'
     pos_ob_name = 'Partofsection'
@@ -136,12 +136,15 @@ def generate_node_cross_section_data(obj_name, npos, nnorm):
     bpy.ops.object.cross_section()
 
     cell_ob.hide = True
-
-    ob = bpy.data.objects[pos_ob_name]
     bpy.ops.object.select_all(False)
 
     plane_ob.select = True
     bpy.ops.object.delete()
+
+    if not pos_ob_name in bpy.data.objects:
+        return None        
+
+    ob = bpy.data.objects[pos_ob_name]
 
     bm = bmesh.new()
     me = bm.from_mesh(ob.data)
@@ -204,18 +207,21 @@ def generate_cross_sections(obj_name, skel_am_file, skel_json_file, segment_rang
                     pnt = mathutils.Vector(ppos)
                     pnorm = pnt - prev_pnt
 
-                    cx_data = generate_node_cross_section_data(obj_name, pnt, pnorm)
                     n_data = {'segment_idx':idx, "pnt_idx":p_idx,
                               'am_position':am_ppos, 'blender_position':ppos, 'blender_normal':pnorm,
                               'estimated_diameter':p.diameter,
                               'estimated_area':math.pi * ((p.diameter / 2.0)**2),
                               'estimated_perimeter':math.pi * p.diameter}
-                    cx_data.update(n_data)
-                    cxs[am_ppos] = cx_data
+                    cx_data = generate_node_cross_section_data(obj_name, pnt, pnorm)
+                    if cx_data:
+                        cx_data.update(n_data)
+                        cxs[am_ppos] = cx_data
 
-                    writer.writerow(cx_data)
-                    f.flush()
-                    print("processed data:%s" % (cx_data))
+                        writer.writerow(cx_data)
+                        f.flush()
+                        print("processed data:%s" % (cx_data))
+                    else:
+                        print("No cross-section data for node:%s" % (n_data))
 
                     p_idx += 1
 
@@ -305,7 +311,7 @@ def debug_cut_faces(obj_name, skeleton, segment_range):
                     break   # for a single segment, create all cutting planes; otherwise, only start pnt
 
 
-
+# TODO: Fix the tests to used the package test/data files
 def test_cut_planes(segment_range = (0,1000)):
     '''
     A test function to show all the cutting planes used to create the cross-sections.
@@ -317,9 +323,9 @@ def test_cut_planes(segment_range = (0,1000)):
     Open the Python console and type:
         import sys, os
         sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
-        import skeleton_annotate
+        import skeleton_annotate_csv
     Run with:
-        skeleton_annotate.test_cut_planes()
+        skeleton_annotate_csv.test_cut_planes()
 
     NOTE: Currently hardcoded to 'Astrocyte 2' in KB-E0010.blend stack
     :param segment_range: A (start, end) tuple specifying which segment nodes to process.
@@ -340,6 +346,7 @@ def test_cut_planes(segment_range = (0,1000)):
 
     debug_cut_planes(obj_name, skeleton, segment_range)
 
+# TODO: Fix the tests to used the package test/data files
 def test_cut_faces(segment_range = (0,10)):
     '''
     A test function to show all the cutting planes and faces used to create the cross-sections.
@@ -353,9 +360,9 @@ def test_cut_faces(segment_range = (0,10)):
     Open the Python console and type:
         import sys, os
         sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
-        import skeleton_annotate
+        import skeleton_annotate_csv
     Run with:
-        skeleton_annotate.test_cut_faces()
+        skeleton_annotate_csv.test_cut_faces()
 
     NOTE: Currently hardcoded to 'Astrocyte 2' in KB-E0010.blend stack
     :param segment_range: A (start, end) tuple specifying which segment nodes to process
@@ -377,6 +384,7 @@ def test_cut_faces(segment_range = (0,10)):
     debug_cut_faces(obj_name, skeleton, segment_range)
 
 
+# TODO: Fix the tests to used the package test/data files
 def test1():
     n_pos = Vector((17.5, 20.25, 11.5))
     n_pos = Vector((3.243425607681274, 0.7165750265121460, 24.52972412109375))
@@ -387,12 +395,13 @@ def test1():
     generate_node_cross_section_data('Astrocyte 2', n_pos, n_norm)
 
 
+# TODO: Fix the tests to used the package test/data files
 def test2():
     # import os, sys, imp, bmesh, functools
     # sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
-    # import skeleton_annotate
-    # skeleton_annotate.test2()
-    # imp.reload(skeleton_annotate) # to reload changes
+    # import skeleton_annotate_csv
+    # skeleton_annotate_csv.test2()
+    # imp.reload(skeleton_annotate_csv) # to reload changes
     dpath = '/var/remote/projects/epfl/data/KB-E0010/astrocyte2'
     am_path = dpath + '/GeometrySurface.Smt.SptGraph_OK.am'
     annotate_path = dpath+'/GeometrySurface.Smt.SptGraph_OK.annotations.json'
@@ -402,7 +411,7 @@ def test2():
 
 
 def main():
-    # blender -t 1 -b /var/remote/projects/epfl/data/KB-E0010/KB-E0010.blend -P skeleton_annotate.py -- "$CELLNAME" $AMPATH $START_SEG $SEG_SIZE
+    # blender -t 1 -b /var/remote/projects/epfl/data/KB-E0010/KB-E0010.blend -P skeleton_annotate_csv.py -- "$CELLNAME" $AMPATH $START_SEG $SEG_SIZE
 
     argv = sys.argv[sys.argv.index("--") + 1:]
 
