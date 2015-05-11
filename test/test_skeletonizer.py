@@ -18,6 +18,7 @@ import sys
 import math
 import getopt
 import copy
+import csv
 import json
 import logging
 import operator
@@ -73,11 +74,32 @@ class MorphologyFileTestCase(unittest.TestCase):
             skel = reader.parse(f)
 
         with open(options.skel_json_file, 'r') as f:
-            data = json.load(f)
+            annotation_data = json.load(f)
 
-        options.set_annotation_data(data)
+        options.set_annotation_data(annotation_data)
 
-        morphology = create_morphology(skel, data['soma'], options)
+
+        with open(options.skel_csv_file, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t', quotechar='|')
+            xsection_data = {}
+            for r in reader:
+                area = float(r['area'])
+                perimeter = float(r['perimeter'])
+                diameter = math.sqrt(area) / math.pi
+                xsection_data[(int(r['segment_idx']), int(r['pnt_idx']))] = \
+                            {'area':area, 'perimeter':perimeter, \
+                             'estimated_diameter':float(r['estimated_diameter']), \
+                             'estimated_area':float(r['estimated_area']), \
+                             'estimated_perimeter':float(r['estimated_perimeter']), \
+                             'blender_position':r['blender_position'], \
+                             'blender_normal':r['blender_normal'], \
+                             'diameter':diameter}
+
+        skel.update_diameters(xsection_data)
+        options.set_xsection_data(xsection_data)
+
+
+        morphology = create_morphology(skel, annotation_data['soma'], options)
 
         create_morphology_file(morphology, options)
 

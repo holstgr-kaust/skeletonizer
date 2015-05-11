@@ -36,9 +36,11 @@ class MorphologyCreateOptions:
 
     skel_am_file = None
     skel_json_file = None
+    skel_csv_file = None
     skel_out_file = None
 
     verbosity_level = logging.INFO
+    ignore_optional_input_files = False
     force_segment_threshold = False
     threshold_segment_length = 0
     scaling_factor = 1
@@ -46,12 +48,15 @@ class MorphologyCreateOptions:
     graph_depth = -1
 
     stack_AABB = None
+    xsection_dict = None
 
 
     def set_pathname(self, arg):
         self.skel_path = os.path.abspath(os.path.dirname(arg))
         if arg[-3:] == '.am':
             self.skel_name = os.path.basename(arg[:-3])
+        elif arg[-1:] == '.':
+            self.skel_name = os.path.basename(arg[:-1])
         else:
             self.skel_name = os.path.basename(arg)
 
@@ -61,6 +66,7 @@ class MorphologyCreateOptions:
 
         self.skel_am_file = os.path.join(self.skel_path, self.skel_name + '.am')
         self.skel_json_file = os.path.join(self.skel_path, self.skel_name + '.annotations.json')
+        self.skel_csv_file = os.path.join(self.skel_path, self.skel_name + '.cross_section.csv')
         self.skel_out_file = os.path.join(self.skel_out_path, self.skel_name + '.h5')
 
     def set_annotation_data(self, data):
@@ -91,6 +97,12 @@ class MorphologyCreateOptions:
 
                 logging.info("Found stack AABB: %f",
                              self.threshold_segment_length)
+
+    def set_xsection_data(self, data):
+        assert (type(data) == dict), "Expected xsection dictionary object"
+        self.xsection_dict = data
+        logging.info("Set cross-section data. Found %i entries.", len(self.xsection_dict))
+
     #TODO: throw exception instead of sys.exit (client should sys.exit)
     def validate(self):
         if not self.skel_name:
@@ -101,6 +113,9 @@ class MorphologyCreateOptions:
             sys.exit(2)
         if not os.path.exists(self.skel_json_file):
             logging.error('ERROR - Missing annotation file: %s', self.skel_json_file)
+            sys.exit(3)
+        if not self.ignore_optional_input_files and not os.path.exists(self.skel_csv_file):
+            logging.error('ERROR - Missing cross_section file: %s', self.skel_csv_file)
             sys.exit(3)
         if not self.force_overwrite and os.path.exists(self.skel_out_file):
             logging.error('ERROR - Existing output file (requires force overwrite): %s', self.skel_out_file)

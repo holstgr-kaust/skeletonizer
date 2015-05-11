@@ -16,6 +16,7 @@ import sys
 import math
 import getopt
 import copy
+import csv
 import json
 import logging
 import operator
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     logging.basicConfig(format=k_FORMAT, level=options.verbosity_level)
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hfas:o:v:t:x:",["skeleton=","output_dir=","verbose=","threshold=","scale="])
+        opts, args = getopt.getopt(sys.argv[1:],"hifas:o:v:t:x:",["skeleton=","output_dir=","verbose=","threshold=","scale="])
     except getopt.GetoptError:
         print 'skeletonize.py -h'
         sys.exit(2)
@@ -51,6 +52,7 @@ if __name__ == '__main__':
                 print ' skeletonize.py <skeleton>'
                 print ' skeletonize.py [-v <level>] [-a] [-t <threshold>] [-x <scale>] -s <skeleton> [-f] [-o <output_dir>]'
                 print '\t -a \t\t Allow cycles in skeleton graph (default False)'
+                print '\t -i \t\t Ignore optional secondary input files (e.g., *.cross-section.csv)'
                 print '\t -f \t\t Force overwrite of output files'
                 print '\t -o <dirname>\t Output directory'
                 print '\t -s <filename>\t Input skeleton filename'
@@ -84,6 +86,8 @@ if __name__ == '__main__':
             elif opt == '-a':
                 options.allow_cycles = True
                 logging.info("Allow Cycles set to: %s", options.allow_cycles)
+            elif opt == '-i':
+                options.ignore_optional_input_files = True
             elif opt == '-f':
                 options.force_overwrite = True
             elif opt in ("-o", "--output_dir"):
@@ -118,20 +122,42 @@ if __name__ == '__main__':
         logging.info('HDF5 Skeletonizer')
         logging.info('\t Source graph: %s', options.skel_am_file)
         logging.info('\t Source annotations: %s', options.skel_json_file)
+        logging.info('\t Source cross_sections: %s', options.skel_csv_file)
         if options.force_overwrite:
             logging.info('\nFORCING OVERWRITE of output file: %s\n', options.skel_out_file)
 
-        reader = AmirameshReader()
-
         with open(options.skel_am_file, 'r') as f:
+            reader = AmirameshReader()
             skel = reader.parse(f)
 
+
         with open(options.skel_json_file, 'r') as f:
-            data = json.load(f)
+            annotation_data = json.load(f)
 
-        options.set_annotation_data(data)
+        options.set_annotation_data(annotation_data)
 
-        morphology = create_morphology(skel, data['soma'], options)
+
+        if not options.ignore_optional_input_files:
+            with open(options.skel_csv_file, 'r') as f:
+                reader = csv.DictReader(f, delimiter='\t', quotechar='|')
+                xsection_data = {}
+                for r in reader:
+                    area = float(r['area'])
+                    perimeter = float(r['perimeter'])
+                    diameter = math.sqrt(area) / math.pi
+                    xsection_data[(int(r['segment_idx']), int(r['pnt_idx']))] = \
+                                {'area':area, 'perimeter':perimeter, \
+                                 'estimated_diameter':float(r['estimated_diameter']), \
+                                 'estimated_area':float(r['estimated_area']), \
+                                 'estimated_perimeter':float(r['estimated_perimeter']), \
+                                 'blender_position':r['blender_position'], \
+                                 'blender_normal':r['blender_normal'], \
+                                 'diameter':diameter}
+
+            skel.update_diameters(xsection_data, outlier_threshold=3.0)
+            options.set_xsection_data(xsection_data)
+
+        morphology = create_morphology(skel, annotation_data['soma'], options)
 
         create_morphology_file(morphology, options)
 

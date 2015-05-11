@@ -80,6 +80,8 @@ def get_paths(arg):
     skel_path = os.path.abspath(os.path.dirname(arg))
     if arg[-3:] == '.am':
         skel_name = os.path.basename(arg[:-3])
+    elif arg[-1:] == '.':
+        skel_name = os.path.basename(arg[:-1])
     else:
         skel_name = os.path.basename(arg)
 
@@ -311,6 +313,56 @@ def debug_cut_faces(obj_name, skeleton, segment_range):
                     break   # for a single segment, create all cutting planes; otherwise, only start pnt
 
 
+def debug_cut_face(obj_name, npos, nnorm):
+    '''
+    Generate list of cross-sectional debug data for object at a node position.
+    :param obj_name: Object name (string)
+    :param npos: Node position vector (Vector), Blender coordinates
+    :param nnorm: Node normal vector (Vector), Blender coordinates
+    :return: List of data on each cross-sectional BMFace found, or None if no cross-section was found
+    '''
+    # Note: Duplicates functionality from generate_node_cross_section_data
+    # (but here we get full debug control without complicating or slowing
+    # performance critical generation code
+    FDIST = 'face_to_npos_distance'
+    def face_debug_info(face, pos_object, npos):
+        fcentre = pos_object.location + face.calc_center_median_weighted()
+        return {
+            FDIST: (npos - fcentre).length,
+            'face_calc_area': face.calc_area(),
+            'face_calc_perimeter': face.calc_perimeter(),
+            'face_pos': fcentre
+        }
+    plane_ob_name = 'Plane'
+    pos_ob_name = 'Partofsection'
+    assert (plane_ob_name not in bpy.data.objects), "Expected special name '%s' to be unused" % (plane_ob_name)
+    assert (pos_ob_name not in bpy.data.objects), "Expected special name '%s' to be unused" % (pos_ob_name)
+    assert (obj_name in bpy.data.objects), "Expected object with name: '%s'" % (obj_name)
+    bpy.ops.mesh.primitive_plane_add(location=npos, rotation=calc_rotation(nnorm))
+    cell_ob = bpy.data.objects[obj_name]
+    plane_ob = bpy.data.objects[plane_ob_name]
+    cell_ob.hide = False
+    bpy.ops.object.select_all(False)
+    cell_ob.select = True
+    plane_ob.select = True
+    bpy.ops.object.cross_section()
+    cell_ob.hide = False
+    bpy.ops.object.select_all(False)
+    plane_ob.select = True
+    bpy.ops.object.delete()
+    if not pos_ob_name in bpy.data.objects:
+        return None
+    ob = bpy.data.objects[pos_ob_name]
+    bm = bmesh.new()
+    me = bm.from_mesh(ob.data)
+    cx_faces = [face_debug_info(f, ob, npos) for f in bm.faces]
+    cx = functools.reduce(lambda a, b: b if not a else b if b[FDIST] < a[FDIST] else a, cx_faces, None)
+    bm.free()
+    ob.select = True
+    ob.show_x_ray = True
+    return {'closest_face':cx, 'cx_faces':cx_faces}
+
+
 # TODO: Fix the tests to used the package test/data files
 def test_cut_planes(segment_range = (0,1000)):
     '''
@@ -359,7 +411,7 @@ def test_cut_faces(segment_range = (0,10)):
         blender <project_file>.blend
     Open the Python console and type:
         import sys, os
-        sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
+        sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/bin'))
         import skeleton_annotate_csv
     Run with:
         skeleton_annotate_csv.test_cut_faces()
@@ -386,9 +438,14 @@ def test_cut_faces(segment_range = (0,10)):
 
 # TODO: Fix the tests to used the package test/data files
 def test1():
-    n_pos = Vector((17.5, 20.25, 11.5))
-    n_pos = Vector((3.243425607681274, 0.7165750265121460, 24.52972412109375))
-    n0_pos = Vector((3.143123149871826, 0.7475772500038147, 24.45019721984863))
+    # import os, sys, imp, bmesh, functools, mathutils
+    # sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/bin'))
+    # import skeleton_annotate_csv
+    # skeleton_annotate_csv.test2()
+    # imp.reload(skeleton_annotate_csv) # to reload changes
+    n_pos = mathutils.Vector((17.5, 20.25, 11.5))
+    n_pos = mathutils.Vector((3.243425607681274, 0.7165750265121460, 24.52972412109375))
+    n0_pos = mathutils.Vector((3.143123149871826, 0.7475772500038147, 24.45019721984863))
     n_norm = n_pos - n0_pos
 
     # Create Cross Sections
@@ -397,8 +454,8 @@ def test1():
 
 # TODO: Fix the tests to used the package test/data files
 def test2():
-    # import os, sys, imp, bmesh, functools
-    # sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/Source'))
+    # import os, sys, imp, bmesh, functools, mathutils
+    # sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/bin'))
     # import skeleton_annotate_csv
     # skeleton_annotate_csv.test2()
     # imp.reload(skeleton_annotate_csv) # to reload changes
@@ -407,6 +464,24 @@ def test2():
     annotate_path = dpath+'/GeometrySurface.Smt.SptGraph_OK.annotations.json'
     segment_range = (0,1)
     generate_cross_sections('Astrocyte 2', am_path, annotate_path, segment_range)
+
+# TODO: Fix the tests to used the package test/data files
+def test3():
+    '''
+    import os, sys, imp, bmesh, functools, mathutils
+    sys.path.append(os.path.abspath('/var/remote/projects/epfl/development/staging/skeletonizer/bin'))
+    import skeleton_annotate_csv
+    skeleton_annotate_csv.test3()
+    imp.reload(skeleton_annotate_csv) # to reload changes
+    '''
+    '''
+        Set n_pos and n_norm to the 'blender pos' and 'normal' values from the
+        'Updated OUTLIER diameter of segment point ...' line in the Skeletonizer
+        output to interactively evaluate the cross-sectional calculations.
+    '''
+    n_pos = mathutils.Vector((9.361766815185547, 10.00971984863281, 28.10153007507324))
+    n_norm = mathutils.Vector((-0.4635, 0.1304, 0.1882))
+    r = debug_cut_face('Astrocyte 2', n_pos, n_norm)
 
 
 

@@ -9,6 +9,8 @@
 """
 
 import re
+import sys
+import logging
 
 #
 # Node class
@@ -117,6 +119,78 @@ class Skeleton(object):
         for segment in self.segments :
             segment.points = points[offset:offset+segment.pointcount]
             offset += segment.pointcount
+
+    def update_diameters(self, xsection_dict,
+                         require_complete_xsection = True,
+                         outlier_logging_threshold = sys.float_info.max):
+        """
+        Given a dictionary of cross-sectional data, updates the point diameters
+        to match those provided by the cross-section data.
+        :param xsection_dict: A dictionary of cross-section data,
+             including 'diameter' and 'estimated_diameter', and indexed by
+             a (segment_index, point_index) tuple.
+        :param require_complete_xsection: If true, assert on missing xsection data
+             otherwise, keep previous value.
+        :param outlier_logging_threshold: Threshold value for pre-post diameter difference;
+             logs special info about points whose new diameters differ by more
+             than the specified threshold.
+        """
+        class UpdateDiameterStats:
+            cnt_total = 0
+            dia_total_pre = 0.0
+            dia_total_post = 0.0
+            inc_dia_total = 0.0
+            dec_dia_total = 0.0
+            cnt_inc_total = 0
+            cnt_dec_total = 0
+
+            def collect_stats(self, pre_dia, post_dia):
+                self.cnt_total += 1
+                self.dia_total_pre += pre_dia
+                self.dia_total_post += post_dia
+                if post_dia > pre_dia:
+                    self.inc_dia_total += (post_dia - pre_dia)
+                    self.cnt_inc_total += 1
+                elif post_dia < pre_dia:
+                    self.dec_dia_total += (pre_dia - post_dia)
+                    self.cnt_dec_total += 1
+
+        stats = UpdateDiameterStats()
+
+        logging.info('Updating diameters from cross_sections: total(%s)', len(xsection_dict))
+
+        for sidx in range(0, len(self.segments)):
+            s = self.segments[sidx]
+            for pidx in range(0, len(s.points)):
+                p = s.points[pidx]
+                idx = (sidx, pidx)
+                if require_complete_xsection or idx in xsection_dict:
+                    assert(idx in xsection_dict), \
+                        "Missing index (%s) in xsection dictionary. Expected complete cross-section data." % idx
+
+                    xs = xsection_dict[idx]
+                    d = xs['diameter'] # max(xs['diameter'], p.diameter)
+
+                    assert(p.diameter == xs['estimated_diameter']), \
+                        "Expected point diameter (%f) to equal xsection estimate (%f)" % \
+                        (p.diameter, xs['estimated_diameter'])
+
+                    if abs(p.diameter - d) > outlier_logging_threshold:
+                        logging.info('\t Updated OUTLIER diameter of segment point (%i,%i) at pos(%s) [blender pos(%s) normal(%s)], from old(%f) to new(%f), diff(%f)',
+                                     sidx, pidx, p.position(), xs['blender_position'], xs['blender_normal'], p.diameter, d, abs(p.diameter - d))
+                    else:
+                        logging.debug('\t Updated diameter of segment point (%i,%i) from old(%f) to new(%f)',
+                                      sidx, pidx, p.diameter, d)
+
+                    stats.collect_stats(p.diameter, d)
+                    p.diameter = d
+
+        logging.info("Diameters updated: %i (inc: %i) (dec: %i), diameters total (pre: %f) (post:%f), increased: (total: %f) (avg: %f), decreased: (total: %f) (avg: %f)",
+                     stats.cnt_total, stats.cnt_inc_total, stats.cnt_dec_total,
+                     stats.dia_total_pre, stats.dia_total_post,
+                     stats.inc_dia_total, (stats.inc_dia_total / stats.cnt_inc_total) if stats.cnt_inc_total > 0 else 0,
+                     stats.dec_dia_total, (stats.dec_dia_total / stats.cnt_dec_total) if stats.cnt_dec_total > 0 else 0)
+
 
     def info(self):
         """Print out the count of Node, Segment and Points objects"""
