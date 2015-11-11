@@ -149,7 +149,6 @@ def show_grow_stats(stats, soma):
     gcnts.reverse()
 
     if gcnts:
-        bcnts = [i for i in gcnts if i > 1]
         logging.info("Grown Node (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s", len(gcnts), sum(gcnts), min(gcnts), max(gcnts), sum(gcnts)/float(len(gcnts)))
         if soma in node_grow_stats:
             logging.info(" Soma grown node counts:%s", len(node_grow_stats[soma]))
@@ -159,9 +158,14 @@ def show_grow_stats(stats, soma):
         logging.info(" Min %i counts:%s", csize, gcnts[-csize:])
         logging.info(" Max %i counts:%s", csize, gcnts[:csize])
 
-        logging.info("Grown Branching Node (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s", len(bcnts), sum(bcnts), min(bcnts), max(bcnts), sum(bcnts)/float(len(bcnts)))
-        logging.info(" Min %i counts:%s", csize, bcnts[-csize:])
-        logging.info(" Max %i counts:%s", csize, bcnts[:csize])
+        bcnts = [i for i in gcnts if i > 1]
+
+        if bcnts:
+            logging.info("Grown Branching Node (%s) Edge count:%s Edge(s) min:%s max:%s avg:%s", len(bcnts), sum(bcnts), min(bcnts), max(bcnts), sum(bcnts)/float(len(bcnts)))
+            logging.info(" Min %i counts:%s", csize, bcnts[-csize:])
+            logging.info(" Max %i counts:%s", csize, bcnts[:csize])
+        else:
+            logging.warning("No Grown Branching Nodes")
     else:
         logging.warning("No Grown Nodes")
 
